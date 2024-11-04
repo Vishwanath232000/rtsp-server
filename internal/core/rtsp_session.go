@@ -26,7 +26,11 @@ import (
 var (
 	// sqsSvc *sqs.SQS
 	dbSvc  *dynamodb.DynamoDB
+
 )
+
+var activeSessionCount int
+var countMutex sync.Mutex
 
 // Add this init function to initialize the DynamoDB client
 func init() {
@@ -39,6 +43,7 @@ func init() {
 	// sqsSvc = sqs.New(sess)
 }
 func getInstanceID() string {
+
 	client := http.Client{
 		Timeout: time.Second * 2,
 	}
@@ -187,8 +192,11 @@ func (s *rtspSession) onClose(err error) {
 			}
 		}()
 
+		activeSessionCount--
+
 		rtsp_path := s.path.Name()
 		fmt.Println("[",rtsp_path,"]", ":", s.uuid, "<<< Stopped")
+		fmt.Println("Active sessions: ","[",activeSessionCount,"]")
 	}
 
 	s.path = nil
@@ -552,6 +560,9 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	s.stateMutex.Lock()
 	s.state = gortsplib.ServerSessionStateRecord
 	s.stateMutex.Unlock()
+	activeSessionCount++
+	fmt.Println("Active sessions: ","[",activeSessionCount,"]")
+	
 
 	return &base.Response{
 		StatusCode: base.StatusOK,
