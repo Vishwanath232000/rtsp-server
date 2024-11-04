@@ -9,7 +9,6 @@ import (
 	"time"
 	"io"
     "net/http"
-    "time"
 
 	"github.com/aler9/gortsplib"
 	"github.com/aler9/gortsplib/pkg/base"
