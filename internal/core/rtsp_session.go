@@ -7,6 +7,9 @@ import (
 	"net"
 	"sync"
 	"time"
+	"io"
+    "net/http"
+    "time"
 
 	"github.com/aler9/gortsplib"
 	"github.com/aler9/gortsplib/pkg/base"
@@ -45,21 +48,23 @@ func init() {
 func getInstanceID() string {
 
 	client := http.Client{
-		Timeout: time.Second * 2,
-	}
-	resp, err := client.Get("http://169.254.169.254/latest/meta-data/instance-id")
-	if err != nil {
-		return "local-instance" // fallback for local testing
-	}
-	defer resp.Body.Close()
-	
-	instanceID, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return "local-instance"
-	}
+        Timeout: time.Second * 2,
+    }
+    
+    // Make a GET request to the instance metadata service
+    resp, err := client.Get("http://169.254.169.254/latest/meta-data/instance-id")
+    if err != nil {
+        return "local-instance" // fallback for local testing
+    }
+    defer resp.Body.Close()
 
-	
-	return string(instanceID)
+    // Read the response body
+    instanceID, err := io.ReadAll(resp.Body) // Use io.ReadAll instead of ioutil.ReadAll
+    if err != nil {
+        return "local-instance"
+    }
+
+    return string(instanceID)
 	// return "12345"
 }
 const (
