@@ -39,7 +39,6 @@ func init() {
 	// sqsSvc = sqs.New(sess)
 }
 func getInstanceID() string {
-	For EC2, you can use the metadata service
 	client := http.Client{
 		Timeout: time.Second * 2,
 	}
