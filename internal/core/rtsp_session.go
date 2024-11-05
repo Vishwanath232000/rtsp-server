@@ -1,70 +1,66 @@
 package core
 
 import (
-	"encoding/hex"
-	"errors"
-	"fmt"
-	"net"
-	"sync"
-	"time"
-	"io"
+	"context"
+    "encoding/hex"
+    "errors"
+    "fmt"
+    "net"
+    "sync"
+    "time"
+    "io"
     "net/http"
 
-	"github.com/aler9/gortsplib"
-	"github.com/aler9/gortsplib/pkg/base"
-	"github.com/google/uuid"
-	"github.com/pion/rtp"
+    "github.com/aler9/gortsplib"
+    "github.com/aler9/gortsplib/pkg/base"
+    "github.com/google/uuid"
+    "github.com/pion/rtp"
 
-	"github.com/bhaney/rtsp-simple-server/internal/conf"
-	"github.com/bhaney/rtsp-simple-server/internal/externalcmd"
-	"github.com/bhaney/rtsp-simple-server/internal/logger"
-	"github.com/aws/aws-sdk-go/aws"
-    "github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/aws/session"
-	// "github.com/aws/aws-sdk-go/service/sqs"
+    "github.com/bhaney/rtsp-simple-server/internal/conf"
+    "github.com/bhaney/rtsp-simple-server/internal/externalcmd"
+    "github.com/bhaney/rtsp-simple-server/internal/logger"
+
+    // AWS SDK v2 imports
+    "github.com/aws/aws-sdk-go-v2/aws"
+    "github.com/aws/aws-sdk-go-v2/config"
+    "github.com/aws/aws-sdk-go-v2/service/dynamodb"
+    "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+    "github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 )
 
-//Add this global variable at the package level
+// Global variables
 var (
-	// sqsSvc *sqs.SQS
-	dbSvc  *dynamodb.DynamoDB
-
+    dbSvc *dynamodb.Client
+    activeSessionCount int
+    countMutex sync.Mutex
 )
 
-var activeSessionCount int
-var countMutex sync.Mutex
-
-// Add this init function to initialize the DynamoDB client
 func init() {
-    // Initialize AWS session
-    sess := session.Must(session.NewSessionWithOptions(session.Options{
-        SharedConfigState: session.SharedConfigEnable,
-    }))
-
-    dbSvc = dynamodb.New(sess)
-	// sqsSvc = sqs.New(sess)
-}
-func getInstanceID() string {
-
-	client := http.Client{
-        Timeout: time.Second * 2,
+    // Load the AWS configuration from the environment, credentials file, or IAM role
+    cfg, err := config.LoadDefaultConfig(context.TODO(),
+        config.WithRegion("us-east-1"), // Replace with your desired region
+    )
+    if err != nil {
+        panic("unable to load SDK config, " + err.Error())
     }
+
+    // Initialize DynamoDB client with the configuration
+    dbSvc = dynamodb.NewFromConfig(cfg)
+}
+
+func getInstanceID() string {
+    ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+    defer cancel()
     
-    // Make a GET request to the instance metadata service
-    resp, err := client.Get("http://169.254.169.254/latest/meta-data/instance-id")
+    client := imds.New(imds.Options{})
+    
+    // Get instance ID from IMDS
+    instanceID, err := client.GetInstanceIdentityDocument(ctx)
     if err != nil {
         return "local-instance" // fallback for local testing
     }
-    defer resp.Body.Close()
-
-    // Read the response body
-    instanceID, err := io.ReadAll(resp.Body) // Use io.ReadAll instead of ioutil.ReadAll
-    if err != nil {
-        return "local-instance"
-    }
-
-    return string(instanceID)
-	// return "12345"
+    
+    return instanceID.InstanceID
 }
 const (
 	pauseAfterAuthError = 2 * time.Second
@@ -166,27 +162,29 @@ func (s *rtspSession) onClose(err error) {
 		
 		// Only log to DynamoDB and print stop message for publishers
 		timestamp := time.Now().UTC().Format(time.RFC3339)
+		
 		input := &dynamodb.UpdateItemInput{
 			TableName: aws.String("sam-rtsp-streams"),
-			Key: map[string]*dynamodb.AttributeValue{
-				"adapter_wifimac": {
-					S: aws.String(s.path.Name()),
+			Key: map[string]types.AttributeValue{
+				"adapter_wifimac": &types.AttributeValueMemberS{
+					Value: s.path.Name(),
 				},
 			},
 			UpdateExpression: aws.String("SET time_stamp = :time_stamp, is_active = :is_active"),
 			ConditionExpression: aws.String("is_active = :is_active_condition"),
-			ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-				":time_stamp": {
-					S: aws.String(timestamp),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":time_stamp": &types.AttributeValueMemberS{
+					Value: timestamp,
 				},
-				":is_active": {
-					BOOL: aws.Bool(false),
+				":is_active": &types.AttributeValueMemberBool{
+					Value: false,
 				},
-				":is_active_condition": {
-					BOOL: aws.Bool(true),
+				":is_active_condition": &types.AttributeValueMemberBool{
+					Value: true,
 				},
 			},
 		}
+
 
 		// Update DynamoDB asynchronously
 		go func() {
@@ -329,46 +327,6 @@ func (s *rtspSession) onSetup(c *rtspConn, ctx *gortsplib.ServerHandlerOnSetupCt
 }
 
 // onPlay is called by rtspServer.
-// func (s *rtspSession) onPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error) {
-// 	h := make(base.Header)
-
-// 	if s.session.State() == gortsplib.ServerSessionStatePrePlay {
-// 		s.path.readerStart(pathReaderStartReq{author: s})
-
-// 		tracks := make(gortsplib.Tracks, len(s.session.SetuppedTracks()))
-// 		n := 0
-// 		for id := range s.session.SetuppedTracks() {
-// 			tracks[n] = s.stream.tracks()[id]
-// 			n++
-// 		}
-
-// 		s.log(logger.Info, "is reading from path '%s', with %s, %s",
-// 			s.path.Name(),
-// 			s.session.SetuppedTransport(),
-// 			sourceTrackInfo(tracks))
-
-// 		if s.path.Conf().RunOnRead != "" {
-// 			s.log(logger.Info, "runOnRead command started")
-// 			s.onReadCmd = externalcmd.NewCmd(
-// 				s.externalCmdPool,
-// 				s.path.Conf().RunOnRead,
-// 				s.path.Conf().RunOnReadRestart,
-// 				s.path.externalCmdEnv(),
-// 				func(co int) {
-// 					s.log(logger.Info, "runOnRead command exited with code %d", co)
-// 				})
-// 		}
-
-// 		s.stateMutex.Lock()
-// 		s.state = gortsplib.ServerSessionStatePlay
-// 		s.stateMutex.Unlock()
-// 	}
-
-// 	return &base.Response{
-// 		StatusCode: base.StatusOK,
-// 		Header:     h,
-// 	}, nil
-// }
 func (s *rtspSession) onPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error) {
 	h := make(base.Header)
 
@@ -411,92 +369,6 @@ func (s *rtspSession) onPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Respo
 	}, nil
 }
 
-// onRecord is called by rtspServer.
-// func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
-// 	res := s.path.publisherStart(pathPublisherStartReq{
-// 		author:             s,
-// 		tracks:             s.session.AnnouncedTracks(),
-// 		generateRTPPackets: false,
-// 	})
-// 	if res.err != nil {
-// 		return &base.Response{
-// 			StatusCode: base.StatusBadRequest,
-// 		}, res.err
-// 	}
-
-// 	// s.log(logger.Info, "is publishing to path '%s', with %s, %s",
-// 	// 	s.path.Name(),
-// 	// 	s.session.SetuppedTransport(),
-// 	// 	sourceTrackInfo(s.session.AnnouncedTracks()))
-// 	fmt.Println(s.path.Name(),":" ,s.uuid ,">>> Started")
-// 	// s.log(logger.Info,"[%s]: %s >>> Started",s.path.Name(),s.uuid)
-
-	
-
-// 	// Send message to SQS
-// 	sqsInput := &sqs.SendMessageInput{
-// 		MessageBody: aws.String(fmt.Sprintf(`{"path": "%s"}`, s.path.Name())),
-// 		QueueUrl:    aws.String("https://sqs.us-east-1.amazonaws.com/992382678727/stream_server_queue"),  // Replace with your SQS queue URL
-// 	}
-
-// 	sqsResp, err := sqsSvc.SendMessage(sqsInput)  
-// 	if err != nil {
-// 		s.log(logger.Error, "failed to send message to SQS: %v", err)
-// 		return &base.Response{
-// 			StatusCode: base.StatusInternalServerError,
-// 		}, err
-// 	}
-
-// 	// Use SQS message ID and timestamp
-// 	messageID := *sqsResp.MessageId
-// 	timestamp := time.Now().UTC().Format(time.RFC3339)
-
-// 	// Prepare DynamoDB input 
-// 	input := &dynamodb.PutItemInput{
-// 		TableName: aws.String("server_stream_table"),  // Replace with your DynamoDB table name
-// 		Item: map[string]*dynamodb.AttributeValue{
-// 			"session_Id": {
-// 				S: aws.String(s.uuid.String()),
-// 			},
-// 			"instance_ID": {
-// 				S: aws.String(getInstanceID()),
-// 			},
-// 			"stream_url": {
-// 				S: aws.String(s.path.Name()),
-// 			},
-// 			"stream_start_time": {
-// 				S: aws.String(timestamp),
-// 			},
-// 			"status": {
-// 				S: aws.String("Streaming"),
-// 			},
-// 			"sqs_message_id": { 
-// 				S: aws.String(messageID),
-// 			},
-// 			"message_sent_time": { 
-// 				S: aws.String(timestamp),
-// 			},
-// 		},
-// 	}
-
-// 	// Asynchronously log to DynamoDB to avoid blocking the main flow
-// 	go func() {
-// 		_, err := dbSvc.PutItem(input)
-// 		if err != nil {
-// 			s.log(logger.Error, "failed to log stream start to DynamoDB: %v", err)
-// 		}
-// 	}()
-
-// 	s.stream = res.stream
-
-// 	s.stateMutex.Lock()
-// 	s.state = gortsplib.ServerSessionStateRecord
-// 	s.stateMutex.Unlock()
-
-// 	return &base.Response{
-// 		StatusCode: base.StatusOK,
-// 	}, nil
-// }
 func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
 	res := s.path.publisherStart(pathPublisherStartReq{
 		author:             s,
@@ -512,48 +384,34 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// Log publisher start
 	fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
 
-	// // Send message to SQS for publishers
-	// sqsInput := &sqs.SendMessageInput{
-	// 	MessageBody: aws.String(fmt.Sprintf(`{"path": "%s"}`, s.path.Name())),
-	// 	QueueUrl:    aws.String("https://sqs.us-east-1.amazonaws.com/992382678727/stream_server_queue"),
-	// }
-
-	// sqsResp, err := sqsSvc.SendMessage(sqsInput)
-	// if err != nil {
-	// 	s.log(logger.Error, "failed to send message to SQS: %v", err)
-	// 	return &base.Response{
-	// 		StatusCode: base.StatusInternalServerError,
-	// 	}, err
-	// }
-
 	// Log to DynamoDB for publishers
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	input := &dynamodb.PutItemInput{
 		TableName: aws.String("sam-rtsp-streams"),
-		Item: map[string]*dynamodb.AttributeValue{
-			"adapter_wifimac": {
-				S: aws.String(s.path.Name()),
+		Item: map[string]types.AttributeValue{
+			"adapter_wifimac": &types.AttributeValueMemberS{
+				Value: s.path.Name(),
 			},
-			"is_active": {
-				BOOL: aws.Bool(true),
+			"is_active": &types.AttributeValueMemberBool{
+				Value: true,
 			},
-			"rstp_server_id1": {
-				S: aws.String(getInstanceID()),
+			"rstp_server_id1": &types.AttributeValueMemberS{
+				Value: getInstanceID(),
 			},
-			"session_id": {
-				S: aws.String(s.uuid.String()),
+			"session_id": &types.AttributeValueMemberS{
+				Value: s.uuid.String(),
 			},
-			"streamer_ip_address": {
-				S: aws.String(s.author.NetConn().RemoteAddr().String()),
+			"streamer_ip_address": &types.AttributeValueMemberS{
+				Value: s.author.NetConn().RemoteAddr().String(),
 			},
-			"time_stamp": {
-				S: aws.String(timestamp),
+			"time_stamp": &types.AttributeValueMemberS{
+				Value: timestamp,
 			},
 		},
 	}
 
 	go func() {
-		_, err := dbSvc.PutItem(input)
+		_, err := dbSvc.PutItem(context.TODO(), input)
 		if err != nil {
 			s.log(logger.Error, "failed to log stream start to DynamoDB: %v", err)
 		}
