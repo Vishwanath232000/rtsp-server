@@ -49,19 +49,17 @@ func init() {
 }
 
 func getInstanceID() string {
-    ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-    defer cancel()
-    
-    client := imds.New(imds.Options{})
-    
-    // Get instance ID from IMDS
-    instanceID, err := client.GetInstanceIdentityDocument(ctx)
-    if err != nil {
-        return "local-instance" // fallback for local testing
-    }
-    
-    return instanceID.InstanceID
+	ctx := context.TODO()
+	imdsClient := imds.NewFromConfig(cfg)  // Assume `cfg` is the AWS configuration you've initialized.
+
+	doc, err := imdsClient.GetInstanceIdentityDocument(ctx, &imds.GetInstanceIdentityDocumentInput{})
+	if err != nil {
+		fmt.Println("Failed to retrieve instance ID:", err)
+		return ""
+	}
+	return doc.InstanceID
 }
+
 const (
 	pauseAfterAuthError = 2 * time.Second
 )
@@ -188,7 +186,7 @@ func (s *rtspSession) onClose(err error) {
 
 		// Update DynamoDB asynchronously
 		go func() {
-			_, err := dbSvc.UpdateItem(input)
+			_, err := dbSvc.UpdateItem(context.TODO(), input)  // Passing context as required
 			if err != nil {
 				s.log(logger.Error, "failed to log stream stop to DynamoDB: %v", err)
 			}
@@ -411,7 +409,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	}
 
 	go func() {
-		_, err := dbSvc.PutItem(context.TODO(), input)
+		_, err := dbSvc.PutItem(context.TODO(), input)  // Passing context as required
 		if err != nil {
 			s.log(logger.Error, "failed to log stream start to DynamoDB: %v", err)
 		}
