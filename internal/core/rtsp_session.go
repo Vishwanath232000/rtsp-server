@@ -159,6 +159,7 @@ func (s *rtspSession) onClose(err error) {
 		s.path.readerRemove(pathReaderRemoveReq{author: s})
 
 	case gortsplib.ServerSessionStatePreRecord, gortsplib.ServerSessionStateRecord:
+		
 		s.path.publisherRemove(pathPublisherRemoveReq{author: s})
 		
 		// Only log to DynamoDB and print stop message for publishers
@@ -177,10 +178,10 @@ func (s *rtspSession) onClose(err error) {
 				":time_stamp": &types.AttributeValueMemberS{
 					Value: timestamp,
 				},
-				":is_active": &&types.AttributeValueMemberBOOL{
+				":is_active": &types.AttributeValueMemberBOOL{
 					Value: false,
 				},
-				":is_active_condition": &&types.AttributeValueMemberBOOL{
+				":is_active_condition": &types.AttributeValueMemberBOOL{
 					Value: true,
 				},
 			},
@@ -393,7 +394,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 			"adapter_wifimac": &types.AttributeValueMemberS{
 				Value: s.path.Name(),
 			},
-			"is_active": &&types.AttributeValueMemberBOOL{
+			"is_active": &types.AttributeValueMemberBOOL{
 				Value: true,
 			},
 			"rstp_server_id1": &types.AttributeValueMemberS{
