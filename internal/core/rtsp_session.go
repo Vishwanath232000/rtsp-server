@@ -8,8 +8,8 @@ import (
     "net"
     "sync"
     "time"
-    "io"
-    "net/http"
+    // "io"
+    // "net/http"
 
     "github.com/aler9/gortsplib"
     "github.com/aler9/gortsplib/pkg/base"
@@ -49,17 +49,20 @@ func init() {
 }
 
 func getInstanceID() string {
-	ctx := context.TODO()
-	imdsClient := imds.NewFromConfig(cfg)  // Assume `cfg` is the AWS configuration you've initialized.
+    ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+    defer cancel()
+    
+    client := imds.New(imds.Options{})
+    
+    // Get instance ID from IMDS
+    instanceID,err := client.GetInstanceIdentityDocument(ctx, &imds.GetInstanceIdentityDocumentInput{})
 
-	doc, err := imdsClient.GetInstanceIdentityDocument(ctx, &imds.GetInstanceIdentityDocumentInput{})
-	if err != nil {
-		fmt.Println("Failed to retrieve instance ID:", err)
-		return ""
-	}
-	return doc.InstanceID
+    if err != nil {
+        return "local-instance" // fallback for local testing
+    }
+    
+    return instanceID.InstanceID
 }
-
 const (
 	pauseAfterAuthError = 2 * time.Second
 )
@@ -174,10 +177,10 @@ func (s *rtspSession) onClose(err error) {
 				":time_stamp": &types.AttributeValueMemberS{
 					Value: timestamp,
 				},
-				":is_active": &types.AttributeValueMemberBool{
+				":is_active": &&types.AttributeValueMemberBOOL{
 					Value: false,
 				},
-				":is_active_condition": &types.AttributeValueMemberBool{
+				":is_active_condition": &&types.AttributeValueMemberBOOL{
 					Value: true,
 				},
 			},
@@ -390,7 +393,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 			"adapter_wifimac": &types.AttributeValueMemberS{
 				Value: s.path.Name(),
 			},
-			"is_active": &types.AttributeValueMemberBool{
+			"is_active": &&types.AttributeValueMemberBOOL{
 				Value: true,
 			},
 			"rstp_server_id1": &types.AttributeValueMemberS{
