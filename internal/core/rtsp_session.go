@@ -199,8 +199,9 @@ func (s *rtspSession) onClose(err error) {
 		activeSessionCount--
 
 		rtsp_path := s.path.Name()
-		fmt.Println("[",rtsp_path,"]", ":", s.uuid, "<<< Stopped")
-		fmt.Println("Active sessions: ","[",activeSessionCount,"]")
+		// fmt.Println("[",rtsp_path,"]", ":", s.uuid, "<<< Stopped")
+		fmt.Println("|", activeSessionCount ,"|", rtsp_path ,"|", s.uuid ,"| ( Stopped )")
+		// [<Count of Active Sreams> | <StreamId> | <SessionId> | (Started | Stopped)]
 	}
 
 	s.path = nil
@@ -384,7 +385,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	}
 
 	// Log publisher start
-	fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
+	// fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
 
 	// Log to DynamoDB for publishers
 	timestamp := time.Now().UTC().Format(time.RFC3339)
@@ -425,7 +426,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	s.state = gortsplib.ServerSessionStateRecord
 	s.stateMutex.Unlock()
 	activeSessionCount++
-	fmt.Println("Active sessions: ","[",activeSessionCount,"]")
+	fmt.Println("|", activeSessionCount ,"|", rtsp_path ,"|", s.uuid ,"| ( Started )")
 	
 
 	return &base.Response{
