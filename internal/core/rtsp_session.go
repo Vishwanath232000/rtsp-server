@@ -426,7 +426,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	s.state = gortsplib.ServerSessionStateRecord
 	s.stateMutex.Unlock()
 	activeSessionCount++
-	fmt.Println("|", activeSessionCount ,"|", rtsp_path ,"|", s.uuid ,"| ( Started )")
+	fmt.Println("|", activeSessionCount ,"|", s.path.Name() ,"|", s.uuid ,"| ( Started )")
 	
 
 	return &base.Response{
