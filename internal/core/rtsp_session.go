@@ -139,7 +139,7 @@ func (s *rtspSession) remoteAddr() net.Addr {
 }
 
 func (s *rtspSession) log(level logger.Level, format string, args ...interface{}) {
-	id := hex.EncodeToString(s.uuid)
+	id := s.uuid.String()
 	s.parent.log(level, "[session %s] "+format, append([]interface{}{id}, args...)...)
 }
 
@@ -203,7 +203,7 @@ func (s *rtspSession) onClose(err error) {
 		formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
 		countMutex.Unlock()
 
-		fmt.Printf("| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.uuid)
+		fmt.Printf("| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
 		
 		
