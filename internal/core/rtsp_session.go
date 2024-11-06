@@ -48,6 +48,7 @@ func init() {
         panic("unable to load SDK config, " + err.Error())
     }
 
+	
     // Initialize DynamoDB client with the configuration
     dbSvc = dynamodb.NewFromConfig(cfg)
 
