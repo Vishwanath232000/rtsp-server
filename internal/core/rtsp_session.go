@@ -33,7 +33,7 @@ var (
     dbSvc *dynamodb.Client
     activeSessionCount int
     countMutex sync.Mutex
-	var dynamoDBTableName string
+	dynamoDBTableName string
 )
 
 
