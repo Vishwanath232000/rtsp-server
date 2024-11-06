@@ -1,4 +1,4 @@
-name: test
+name: lint
 
 on:
   push:
@@ -7,34 +7,44 @@ on:
     branches: [ main ]
 
 jobs:
-  test64:
+  lint:
     runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - run: make test
+      - uses: actions/setup-go@v2
+        with:
+          go-version: "1.22.2"  # Update to the version matching your go.mod
 
-    - uses: codecov/codecov-action@v3
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Set up environment variables
+        run: |
+          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
 
-  test32:
+      - uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.49.0
+
+  mod-tidy:
     runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - run: make test32
+      - uses: actions/setup-go@v2
+        with:
+          go-version: "1.22.2"  # Update to the version matching your go.mod
 
-  test_highlevel:
+      - run: |
+          go mod download
+          go mod tidy
+          git diff --exit-code
+
+  apidocs:
     runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - uses: actions/setup-go@v2
-      with:
-        go-version: "1.19"
-
-    - run: make test-highlevel-nodocker
+      - run: make apidocs-lint
