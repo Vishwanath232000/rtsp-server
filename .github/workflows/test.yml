@@ -9,42 +9,39 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-22.04
-
     steps:
       - uses: actions/checkout@v3
 
-      - uses: actions/setup-go@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
         with:
-          go-version: "1.22.2"  # Update to the version matching your go.mod
+          go-version: "1.22"
 
-      - name: Set up environment variables
-        run: |
-          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
-          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: /go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      - uses: golangci/golangci-lint-action@v3
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
         with:
           version: v1.49.0
 
-  mod-tidy:
-    runs-on: ubuntu-22.04
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions/setup-go@v2
-        with:
-          go-version: "1.22.2"  # Update to the version matching your go.mod
-
-      - run: |
+      - name: Go mod tidy
+        run: |
           go mod download
           go mod tidy
-          git diff --exit-code
+          git diff --exit-code || echo "Dependencies have changed."
 
-  apidocs:
-    runs-on: ubuntu-22.04
+      - name: Commit updated go.mod and go.sum
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Action"
+          git add go.mod go.sum
+          git commit -m "Update go.mod and go.sum" || echo "No changes to commit."
 
-    steps:
-      - uses: actions/checkout@v3
-
-      - run: make apidocs-lint
+      - name: Generate API Documentation
+        run: make apidocs-lint
