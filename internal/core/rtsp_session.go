@@ -166,7 +166,7 @@ func (s *rtspSession) onClose(err error) {
 		timestamp := time.Now().UTC().Format(time.RFC3339)
 		
 		input := &dynamodb.UpdateItemInput{
-			TableName: aws.String("sam-rtsp-streams"),
+			TableName: aws.String("sam-rtsp-virtual-streams"),
 			Key: map[string]types.AttributeValue{
 				"stream_id": &types.AttributeValueMemberS{
 					Value: s.path.Name(),
@@ -395,7 +395,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// Log to DynamoDB for publishers
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	input := &dynamodb.PutItemInput{
-		TableName: aws.String("sam-rtsp-streams"),
+		TableName: aws.String("sam-rtsp-virtual-streams"),
 		Item: map[string]types.AttributeValue{
 			"stream_id": &types.AttributeValueMemberS{
 				Value: s.path.Name(),
