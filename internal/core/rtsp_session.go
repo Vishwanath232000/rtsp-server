@@ -2,7 +2,7 @@ package core
 
 import (
 	"context"
-    "encoding/hex"
+    // "encoding/hex"
     "errors"
     "fmt"
     "net"
