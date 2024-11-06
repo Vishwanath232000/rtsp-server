@@ -139,7 +139,7 @@ func (s *rtspSession) remoteAddr() net.Addr {
 }
 
 func (s *rtspSession) log(level logger.Level, format string, args ...interface{}) {
-	id := hex.EncodeToString(s.uuid[:4])
+	id := hex.EncodeToString(s.uuid)
 	s.parent.log(level, "[session %s] "+format, append([]interface{}{id}, args...)...)
 }
 
@@ -168,7 +168,7 @@ func (s *rtspSession) onClose(err error) {
 		input := &dynamodb.UpdateItemInput{
 			TableName: aws.String("sam-rtsp-streams"),
 			Key: map[string]types.AttributeValue{
-				"adapter_wifimac": &types.AttributeValueMemberS{
+				"stream_id": &types.AttributeValueMemberS{
 					Value: s.path.Name(),
 				},
 			},
@@ -195,13 +195,18 @@ func (s *rtspSession) onClose(err error) {
 				s.log(logger.Error, "failed to log stream stop to DynamoDB: %v", err)
 			}
 		}()
-
+		// rtsp_path := s.path.Name()
+		
+		// fmt.Println("|", activeSessionCount ,"|", rtsp_path ,"|", s.uuid ,"| ( Stopped )")
+		countMutex.Lock()
 		activeSessionCount--
+		formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
+		countMutex.Unlock()
 
-		rtsp_path := s.path.Name()
-		// fmt.Println("[",rtsp_path,"]", ":", s.uuid, "<<< Stopped")
-		fmt.Println("|", activeSessionCount ,"|", rtsp_path ,"|", s.uuid ,"| ( Stopped )")
-		// [<Count of Active Sreams> | <StreamId> | <SessionId> | (Started | Stopped)]
+		fmt.Printf("| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.uuid)
+
+		
+		
 	}
 
 	s.path = nil
@@ -392,13 +397,13 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	input := &dynamodb.PutItemInput{
 		TableName: aws.String("sam-rtsp-streams"),
 		Item: map[string]types.AttributeValue{
-			"adapter_wifimac": &types.AttributeValueMemberS{
+			"stream_id": &types.AttributeValueMemberS{
 				Value: s.path.Name(),
 			},
 			"is_active": &types.AttributeValueMemberBOOL{
 				Value: true,
 			},
-			"rstp_server_id1": &types.AttributeValueMemberS{
+			"rstp_server_id": &types.AttributeValueMemberS{
 				Value: getInstanceID(),
 			},
 			"session_id": &types.AttributeValueMemberS{
@@ -425,8 +430,15 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	s.stateMutex.Lock()
 	s.state = gortsplib.ServerSessionStateRecord
 	s.stateMutex.Unlock()
+	// activeSessionCount++
+	// fmt.Println("|", activeSessionCount ,"|", s.path.Name() ,"|", s.uuid ,"| ( Started )")
+	countMutex.Lock()
 	activeSessionCount++
-	fmt.Println("|", activeSessionCount ,"|", s.path.Name() ,"|", s.uuid ,"| ( Started )")
+	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
+	countMutex.Unlock()
+
+	fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+
 	
 
 	return &base.Response{
