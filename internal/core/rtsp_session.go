@@ -33,7 +33,10 @@ var (
     dbSvc *dynamodb.Client
     activeSessionCount int
     countMutex sync.Mutex
+	var dynamoDBTableName string
 )
+
+
 
 func init() {
     // Load the AWS configuration from the environment, credentials file, or IAM role
@@ -46,6 +49,13 @@ func init() {
 
     // Initialize DynamoDB client with the configuration
     dbSvc = dynamodb.NewFromConfig(cfg)
+
+	dynamoDBTableName = os.Getenv("DYNAMODB_TABLE_NAME")
+    if dynamoDBTableName == "" {
+        log.Fatal("DYNAMODB_TABLE_NAME environment variable is not set")
+		dynamoDBTableName="sam-rtsp-virtual-streams"
+
+    }
 }
 
 func getInstanceID() string {
@@ -166,7 +176,7 @@ func (s *rtspSession) onClose(err error) {
 		timestamp := time.Now().UTC().Format(time.RFC3339)
 		
 		input := &dynamodb.UpdateItemInput{
-			TableName: aws.String("sam-rtsp-virtual-streams"),
+			TableName: aws.String(dynamoDBTableName),
 			Key: map[string]types.AttributeValue{
 				"stream_id": &types.AttributeValueMemberS{
 					Value: s.path.Name(),
@@ -395,7 +405,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// Log to DynamoDB for publishers
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	input := &dynamodb.PutItemInput{
-		TableName: aws.String("sam-rtsp-virtual-streams"),
+		TableName: aws.String(dynamoDBTableName),
 		Item: map[string]types.AttributeValue{
 			"stream_id": &types.AttributeValueMemberS{
 				Value: s.path.Name(),
