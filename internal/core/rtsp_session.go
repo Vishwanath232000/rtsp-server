@@ -409,6 +409,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 		}, res.err
 	}
 	countMutex.Lock()
+	
 	activeSessionCount++
 	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
 	countMutex.Unlock()
