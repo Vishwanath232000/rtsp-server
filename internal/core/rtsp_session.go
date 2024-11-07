@@ -127,7 +127,9 @@ func newRTSPSession(
 		created:         time.Now(),
 	}
 
-	// s.log(logger.Info, "created by %v", s.author.NetConn().RemoteAddr())
+	s.log(logger.Info, "created by %v", s.author.NetConn().RemoteAddr())
+	fmt.Printf("|%s|%s\n", s.uuid, s.path.Name())
+
 
 	return s
 }
