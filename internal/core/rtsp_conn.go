@@ -73,7 +73,7 @@ func newRTSPConn(
 		created:                   time.Now(),
 	}
 
-	// c.log(logger.Info, "opened rtspAdress:[%s]| conn:[%s] | parent[%s]",rtspAddress,conn,parent)
+	c.log(logger.Info, "opened rtspAdress:[%s]| conn:[%s] | parent[%s]",rtspAddress,conn,parent)
 
 	if c.runOnConnect != "" {
 		c.log(logger.Info, "runOnConnect command started")
@@ -231,7 +231,7 @@ func (c *rtspConn) authenticate(
 
 // onClose is called by rtspServer.
 func (c *rtspConn) onClose(err error) {
-	// c.log(logger.Info, "closed (%v)", err)
+	c.log(logger.Info, "closed (%v)", err)
 
 	if c.onConnectCmd != nil {
 		c.onConnectCmd.Close()

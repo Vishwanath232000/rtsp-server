@@ -128,7 +128,6 @@ func newRTSPSession(
 	}
 
 	s.log(logger.Info, "created by %v", s.author.NetConn().RemoteAddr())
-	fmt.Printf("|%s|%s\n", s.uuid, s.path.Name())
 
 
 	return s
@@ -167,6 +166,7 @@ func (s *rtspSession) onClose(err error) {
 			s.log(logger.Info, "runOnRead command stopped")
 		}
 	}
+	
 
 	switch s.session.State() {
 	case gortsplib.ServerSessionStatePrePlay, gortsplib.ServerSessionStatePlay:
@@ -175,6 +175,12 @@ func (s *rtspSession) onClose(err error) {
 	case gortsplib.ServerSessionStatePreRecord, gortsplib.ServerSessionStateRecord:
 		
 		s.path.publisherRemove(pathPublisherRemoveReq{author: s})
+		countMutex.Lock()
+		activeSessionCount--
+		formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
+		countMutex.Unlock()
+
+		fmt.Printf("| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 		
 		// Only log to DynamoDB and print stop message for publishers
 		timestamp := time.Now().UTC().Format(time.RFC3339)
@@ -212,12 +218,12 @@ func (s *rtspSession) onClose(err error) {
 		// rtsp_path := s.path.Name()
 		
 		// fmt.Println("|", activeSessionCount ,"|", rtsp_path ,"|", s.uuid ,"| ( Stopped )")
-		countMutex.Lock()
-		activeSessionCount--
-		formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
-		countMutex.Unlock()
+		// countMutex.Lock()
+		// activeSessionCount--
+		// formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
+		// countMutex.Unlock()
 
-		fmt.Printf("| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+		// fmt.Printf("| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
 		
 		
@@ -402,6 +408,13 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 			StatusCode: base.StatusBadRequest,
 		}, res.err
 	}
+	countMutex.Lock()
+	activeSessionCount++
+	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
+	countMutex.Unlock()
+
+	fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+
 
 	// Log publisher start
 	// fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
@@ -444,14 +457,12 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	s.stateMutex.Lock()
 	s.state = gortsplib.ServerSessionStateRecord
 	s.stateMutex.Unlock()
+	// countMutex.Lock()
 	// activeSessionCount++
-	// fmt.Println("|", activeSessionCount ,"|", s.path.Name() ,"|", s.uuid ,"| ( Started )")
-	countMutex.Lock()
-	activeSessionCount++
-	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
-	countMutex.Unlock()
+	// formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
+	// countMutex.Unlock()
 
-	fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+	// fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
 	
 
