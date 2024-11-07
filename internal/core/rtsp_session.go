@@ -190,6 +190,7 @@ func (s *rtspSession) onClose(err error) {
 		countMutex.Unlock()
 
 		fmt.Printf("| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+		s.log(logger.Info,"| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 		
 		// Only log to DynamoDB and print stop message for publishers
 		timestamp := time.Now().UTC().Format(time.RFC3339)
@@ -443,6 +444,8 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	s.log(logger.Debug,"onRecord: End-2")
 
 	fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+	
+	s.log(logger.Info,"| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
 
 	// Log publisher start
