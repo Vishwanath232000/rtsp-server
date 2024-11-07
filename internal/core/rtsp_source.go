@@ -45,6 +45,7 @@ func newRTSPSource(
 	readBufferCount int,
 	parent rtspSourceParent,
 ) *rtspSource {
+	logger.Debug("newRTSPSource: Begin")
 	return &rtspSource{
 		ur:              ur,
 		proto:           proto,
@@ -55,6 +56,7 @@ func newRTSPSource(
 		readBufferCount: readBufferCount,
 		parent:          parent,
 	}
+	logger.Debug("newRTSPSource: End-99")
 }
 
 func (s *rtspSource) Log(level logger.Level, format string, args ...interface{}) {
@@ -63,6 +65,7 @@ func (s *rtspSource) Log(level logger.Level, format string, args ...interface{})
 
 // run implements sourceStaticImpl.
 func (s *rtspSource) run(ctx context.Context) error {
+	s.log(logger.Debug,"run: Begin")
 	s.Log(logger.Debug, "connecting")
 
 	var tlsConfig *tls.Config
@@ -76,9 +79,11 @@ func (s *rtspSource) run(ctx context.Context) error {
 				fingerprintLower := strings.ToLower(s.fingerprint)
 
 				if hstr != fingerprintLower {
+					s.log(logger.Debug,"run: End-1")
 					return fmt.Errorf("server fingerprint do not match: expected %s, got %s",
 						fingerprintLower, hstr)
 				}
+				s.log(logger.Debug,"run: End-2")
 
 				return nil
 			},
@@ -105,11 +110,13 @@ func (s *rtspSource) run(ctx context.Context) error {
 
 	u, err := url.Parse(s.ur)
 	if err != nil {
+		s.log(logger.Debug,"run: End-3")
 		return err
 	}
 
 	err = c.Start(u.Scheme, u.Host)
 	if err != nil {
+		s.log(logger.Debug,"run: End-4")
 		return err
 	}
 	defer c.Close()
@@ -119,12 +126,14 @@ func (s *rtspSource) run(ctx context.Context) error {
 		readErr <- func() error {
 			tracks, baseURL, _, err := c.Describe(u)
 			if err != nil {
+				s.log(logger.Debug,"run: End-5")
 				return err
 			}
 
 			for _, t := range tracks {
 				_, err := c.Setup(t, baseURL, 0, 0)
 				if err != nil {
+					s.log(logger.Debug,"run: End-6")
 					return err
 				}
 			}
@@ -134,6 +143,7 @@ func (s *rtspSource) run(ctx context.Context) error {
 				generateRTPPackets: false,
 			})
 			if res.err != nil {
+				s.log(logger.Debug,"run: End-7")
 				return res.err
 			}
 
@@ -176,20 +186,24 @@ func (s *rtspSource) run(ctx context.Context) error {
 
 			_, err = c.Play(nil)
 			if err != nil {
+				s.log(logger.Debug,"run: End-8")
 				return err
 			}
 
+			s.log(logger.Debug,"run: End-9")
 			return c.Wait()
 		}()
 	}()
 
 	select {
 	case err := <-readErr:
+		s.log(logger.Debug,"run: End-10")
 		return err
 
 	case <-ctx.Done():
 		c.Close()
 		<-readErr
+		s.log(logger.Debug,"run: End-11")
 		return nil
 	}
 }

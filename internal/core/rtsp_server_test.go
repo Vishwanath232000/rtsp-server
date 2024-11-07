@@ -10,6 +10,7 @@ import (
 )
 
 func TestRTSPServerAuth(t *testing.T) {
+	////c.log(logger.debug,"TestRTSPServerAuth: Begin")
 	for _, ca := range []string{
 		"internal",
 		"external",
@@ -109,9 +110,11 @@ func TestRTSPServerAuth(t *testing.T) {
 		require.NoError(t, err)
 		defer source.Close()
 	})
+	//c.log(logger.debug,"TestRTSPServerAuth: End-99")
 }
 
 func TestRTSPServerAuthFail(t *testing.T) {
+	//c.log(logger.debug,"TestRTSPServerAuthFail: Begin")
 	for _, ca := range []struct {
 		name string
 		user string
@@ -256,9 +259,12 @@ func TestRTSPServerAuthFail(t *testing.T) {
 		)
 		require.EqualError(t, err, "bad status code: 401 (Unauthorized)")
 	})
+	//c.log(logger.debug,"TestRTSPServerAuthFail: End-99")
 }
 
 func TestRTSPServerPublisherOverride(t *testing.T) {
+	//c.log(logger.debug,"TestRTSPServerPublisherOverride: Begin")
+	
 	for _, ca := range []string{
 		"enabled",
 		"disabled",
@@ -363,9 +369,11 @@ func TestRTSPServerPublisherOverride(t *testing.T) {
 			<-frameRecv
 		})
 	}
+	//c.log(logger.debug,"TestRTSPServerPublisherOverride: End-99")
 }
 
 func TestRTSPServerFallback(t *testing.T) {
+	//c.log(logger.debug,"TestRTSPServerFallback: Begin")
 	for _, ca := range []string{
 		"absolute",
 		"relative",
@@ -411,4 +419,5 @@ func TestRTSPServerFallback(t *testing.T) {
 			require.Equal(t, 1, len(tracks))
 		})
 	}
+	//c.log(logger.debug,"TestRTSPServerFallback: End-99")
 }

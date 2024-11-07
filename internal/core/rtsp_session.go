@@ -126,8 +126,11 @@ func newRTSPSession(
 		uuid:            uuid.New(),
 		created:         time.Now(),
 	}
+	s.log(logger.Debug,"newRTSPSession: Begin")
 
+	
 	s.log(logger.Info, "created by %v", s.author.NetConn().RemoteAddr())
+	s.log(logger.Debug,"newRTSPSession: End-99")
 
 
 	return s
@@ -135,15 +138,20 @@ func newRTSPSession(
 
 // Close closes a Session.
 func (s *rtspSession) close() {
+	s.log(logger.Debug,"close: Begin")
 	s.session.Close()
+	s.log(logger.Debug,"close: End-99")
+	
 }
 
 // isRTSPSession implements pathRTSPSession.
 func (s *rtspSession) isRTSPSession() {}
 
 func (s *rtspSession) safeState() gortsplib.ServerSessionState {
+	s.log(logger.Debug,"safeState: Begin")
 	s.stateMutex.Lock()
 	defer s.stateMutex.Unlock()
+	s.log(logger.Debug,"safeState: End-99")
 	return s.state
 }
 
@@ -159,6 +167,7 @@ func (s *rtspSession) log(level logger.Level, format string, args ...interface{}
 // onClose is called by rtspServer.
 // 
 func (s *rtspSession) onClose(err error) {
+	s.log(logger.Debug,"onClose: Begin")
 	if s.session.State() == gortsplib.ServerSessionStatePlay {
 		if s.onReadCmd != nil {
 			s.onReadCmd.Close()
@@ -228,6 +237,7 @@ func (s *rtspSession) onClose(err error) {
 		
 		
 	}
+	s.log(logger.Debug,"onClose: End-99")
 
 	s.path = nil
 	s.stream = nil
@@ -235,6 +245,7 @@ func (s *rtspSession) onClose(err error) {
 
 // onAnnounce is called by rtspServer.
 func (s *rtspSession) onAnnounce(c *rtspConn, ctx *gortsplib.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
+	s.log(logger.Debug,"onAnnounce: Begin")
 	res := s.pathManager.publisherAdd(pathPublisherAddReq{
 		author:   s,
 		pathName: ctx.Path,
@@ -271,6 +282,7 @@ func (s *rtspSession) onAnnounce(c *rtspConn, ctx *gortsplib.ServerHandlerOnAnno
 	s.stateMutex.Lock()
 	s.state = gortsplib.ServerSessionStatePreRecord
 	s.stateMutex.Unlock()
+	s.log(logger.Debug,"onAnnounce: End-99")
 
 	return &base.Response{
 		StatusCode: base.StatusOK,
@@ -280,12 +292,14 @@ func (s *rtspSession) onAnnounce(c *rtspConn, ctx *gortsplib.ServerHandlerOnAnno
 // onSetup is called by rtspServer.
 func (s *rtspSession) onSetup(c *rtspConn, ctx *gortsplib.ServerHandlerOnSetupCtx,
 ) (*base.Response, *gortsplib.ServerStream, error) {
+	s.log(logger.Debug,"onSetup: Begin")
 	// in case the client is setupping a stream with UDP or UDP-multicast, and these
 	// transport protocols are disabled, gortsplib already blocks the request.
 	// we have only to handle the case in which the transport protocol is TCP
 	// and it is disabled.
 	if ctx.Transport == gortsplib.TransportTCP {
 		if _, ok := s.protocols[conf.Protocol(gortsplib.TransportTCP)]; !ok {
+			s.log(logger.Debug,"onSetup: End-1")
 			return &base.Response{
 				StatusCode: base.StatusUnsupportedTransport,
 			}, nil, nil
@@ -302,6 +316,7 @@ func (s *rtspSession) onSetup(c *rtspConn, ctx *gortsplib.ServerHandlerOnSetupCt
 				pathUser conf.Credential,
 				pathPass conf.Credential,
 			) error {
+				s.log(logger.Debug,"onSetup: End-1")
 				return c.authenticate(ctx.Path, pathIPs, pathUser, pathPass, false, ctx.Request, ctx.Query)
 			},
 		})
@@ -310,20 +325,24 @@ func (s *rtspSession) onSetup(c *rtspConn, ctx *gortsplib.ServerHandlerOnSetupCt
 			switch terr := res.err.(type) {
 			case pathErrAuthNotCritical:
 				s.log(logger.Debug, "non-critical authentication error: %s", terr.message)
+				s.log(logger.Debug,"onSetup: End-2")
 				return terr.response, nil, nil
 
 			case pathErrAuthCritical:
 				// wait some seconds to stop brute force attacks
 				<-time.After(pauseAfterAuthError)
 
+				s.log(logger.Debug,"onSetup: End-3")
 				return terr.response, nil, errors.New(terr.message)
 
 			case pathErrNoOnePublishing:
+				s.log(logger.Debug,"onSetup: End-4")
 				return &base.Response{
 					StatusCode: base.StatusNotFound,
 				}, nil, res.err
 
 			default:
+				s.log(logger.Debug,"onSetup: End-5")
 				return &base.Response{
 					StatusCode: base.StatusBadRequest,
 				}, nil, res.err
@@ -334,6 +353,7 @@ func (s *rtspSession) onSetup(c *rtspConn, ctx *gortsplib.ServerHandlerOnSetupCt
 		s.stream = res.stream
 
 		if ctx.TrackID >= len(res.stream.tracks()) {
+			s.log(logger.Debug,"onSetup: End-6")
 			return &base.Response{
 				StatusCode: base.StatusBadRequest,
 			}, nil, fmt.Errorf("track %d does not exist", ctx.TrackID)
@@ -343,11 +363,13 @@ func (s *rtspSession) onSetup(c *rtspConn, ctx *gortsplib.ServerHandlerOnSetupCt
 		s.state = gortsplib.ServerSessionStatePrePlay
 		s.stateMutex.Unlock()
 
+		s.log(logger.Debug,"onSetup: End-7")
 		return &base.Response{
 			StatusCode: base.StatusOK,
 		}, res.stream.rtspStream, nil
 
 	default: // record
+		s.log(logger.Debug,"onSetup: End-99")
 		return &base.Response{
 			StatusCode: base.StatusOK,
 		}, nil, nil
@@ -356,6 +378,7 @@ func (s *rtspSession) onSetup(c *rtspConn, ctx *gortsplib.ServerHandlerOnSetupCt
 
 // onPlay is called by rtspServer.
 func (s *rtspSession) onPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error) {
+	s.log(logger.Debug,"onPlay: Begin")
 	h := make(base.Header)
 
 	if s.session.State() == gortsplib.ServerSessionStatePrePlay {
@@ -368,11 +391,12 @@ func (s *rtspSession) onPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Respo
 			n++
 		}
 
+		
 		// Only log basic info for readers, no special formatting
-		// s.log(logger.Info, "is reading from path '%s', with %s, %s",
-		// 	s.path.Name(),
-		// 	s.session.SetuppedTransport(),
-		// 	sourceTrackInfo(tracks))
+		s.log(logger.Info, "is reading from path '%s', with %s, %s",
+			s.path.Name(),
+			s.session.SetuppedTransport(),
+			sourceTrackInfo(tracks))
 
 		if s.path.Conf().RunOnRead != "" {
 			s.log(logger.Info, "runOnRead command started")
@@ -390,6 +414,7 @@ func (s *rtspSession) onPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Respo
 		s.state = gortsplib.ServerSessionStatePlay
 		s.stateMutex.Unlock()
 	}
+	s.log(logger.Debug,"onPlay: End-99")
 
 	return &base.Response{
 		StatusCode: base.StatusOK,
@@ -398,12 +423,14 @@ func (s *rtspSession) onPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Respo
 }
 
 func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
+	s.log(logger.Debug,"onRecord: Begin")
 	res := s.path.publisherStart(pathPublisherStartReq{
 		author:             s,
 		tracks:             s.session.AnnouncedTracks(),
 		generateRTPPackets: false,
 	})
 	if res.err != nil {
+		s.log(logger.Debug,"onRecord: End-1")
 		return &base.Response{
 			StatusCode: base.StatusBadRequest,
 		}, res.err
@@ -413,6 +440,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	activeSessionCount++
 	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
 	countMutex.Unlock()
+	s.log(logger.Debug,"onRecord: End-2")
 
 	fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
@@ -465,6 +493,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 
 	// fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
+	s.log(logger.Debug,"onRecord: End-99")
 	
 
 	return &base.Response{
@@ -474,6 +503,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 
 // onPause is called by rtspServer.
 func (s *rtspSession) onPause(ctx *gortsplib.ServerHandlerOnPauseCtx) (*base.Response, error) {
+	s.log(logger.Debug,"onPause: Begin")
 	switch s.session.State() {
 	case gortsplib.ServerSessionStatePlay:
 		if s.onReadCmd != nil {
@@ -495,6 +525,8 @@ func (s *rtspSession) onPause(ctx *gortsplib.ServerHandlerOnPauseCtx) (*base.Res
 		s.stateMutex.Unlock()
 	}
 
+	s.log(logger.Debug,"onPause: End-99")
+
 	return &base.Response{
 		StatusCode: base.StatusOK,
 	}, nil
@@ -507,6 +539,7 @@ func (s *rtspSession) onReaderData(data data) {
 
 // apiReaderDescribe implements reader.
 func (s *rtspSession) apiReaderDescribe() interface{} {
+	s.log(logger.Debug,"apiReaderDescribe: Begin")
 	var typ string
 	if s.isTLS {
 		typ = "rtspsSession"
@@ -514,6 +547,7 @@ func (s *rtspSession) apiReaderDescribe() interface{} {
 		typ = "rtspSession"
 	}
 
+	s.log(logger.Debug,"apiReaderDescribe: End-99")
 	return struct {
 		Type string `json:"type"`
 		ID   string `json:"id"`
@@ -522,12 +556,14 @@ func (s *rtspSession) apiReaderDescribe() interface{} {
 
 // apiSourceDescribe implements source.
 func (s *rtspSession) apiSourceDescribe() interface{} {
+	s.log(logger.Debug,"apiSourceDescribe: Begin")
 	var typ string
 	if s.isTLS {
 		typ = "rtspsSession"
 	} else {
 		typ = "rtspSession"
 	}
+	s.log(logger.Debug,"apiSourceDescribe: End-99")
 
 	return struct {
 		Type string `json:"type"`
@@ -537,6 +573,7 @@ func (s *rtspSession) apiSourceDescribe() interface{} {
 
 // onPacketRTP is called by rtspServer.
 func (s *rtspSession) onPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
+	s.log(logger.Debug,"onPacketRTP: Begin")
 	var err error
 
 	switch s.session.AnnouncedTracks()[ctx.TrackID].(type) {
@@ -565,6 +602,7 @@ func (s *rtspSession) onPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
 	if err != nil {
 		s.log(logger.Warn, "%v", err)
 	}
+	s.log(logger.Debug,"onPacketRTP: End-99")
 }
 
 // onDecodeError is called by rtspServer.

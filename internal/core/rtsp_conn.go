@@ -58,6 +58,7 @@ func newRTSPConn(
 	conn *gortsplib.ServerConn,
 	parent rtspConnParent,
 ) *rtspConn {
+
 	c := &rtspConn{
 		externalAuthenticationURL: externalAuthenticationURL,
 		rtspAddress:               rtspAddress,
@@ -72,6 +73,7 @@ func newRTSPConn(
 		uuid:                      uuid.New(),
 		created:                   time.Now(),
 	}
+	c.log(logger.debug,"newRTSPConn: Begin")
 
 	c.log(logger.Info, "opened rtspAdress:[%s]| conn:[%s] | parent[%s]",rtspAddress,conn,parent)
 
@@ -91,10 +93,12 @@ func newRTSPConn(
 			})
 	}
 
+	c.log(logger.debug,"newRTSPConn: End-99")
 	return c
 }
 
 func (c *rtspConn) log(level logger.Level, format string, args ...interface{}) {
+
 	c.parent.log(level, "[conn %v] "+format, append([]interface{}{c.conn.NetConn().RemoteAddr()}, args...)...)
 }
 
@@ -120,6 +124,7 @@ func (c *rtspConn) authenticate(
 	req *base.Request,
 	query string,
 ) error {
+	c.log(logger.debug,"authenticate: Begin")
 	if c.externalAuthenticationURL != "" {
 		username := ""
 		password := ""
@@ -211,6 +216,7 @@ func (c *rtspConn) authenticate(
 					},
 				}
 			}
+			c.log(logger.debug,"authenticate: End-1")
 
 			return pathErrAuthNotCritical{
 				response: &base.Response{
@@ -225,23 +231,27 @@ func (c *rtspConn) authenticate(
 		// login successful, reset authFailures
 		c.authFailures = 0
 	}
-
+    c.log(logger.debug,"authenticate: End-99")
 	return nil
 }
 
 // onClose is called by rtspServer.
 func (c *rtspConn) onClose(err error) {
+	c.log(logger.debug,"onClose: Begin")
 	c.log(logger.Info, "closed (%v)", err)
+	
 
 	if c.onConnectCmd != nil {
 		c.onConnectCmd.Close()
 		c.log(logger.Info, "runOnConnect command stopped")
 	}
+	c.log(logger.debug,"onClose: End-99")
 }
 
 // onRequest is called by rtspServer.
 func (c *rtspConn) onRequest(req *base.Request) {
 	c.log(logger.Debug, "[c->s] %v", req)
+
 }
 
 // OnResponse is called by rtspServer.
@@ -252,6 +262,7 @@ func (c *rtspConn) OnResponse(res *base.Response) {
 // onDescribe is called by rtspServer.
 func (c *rtspConn) onDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 ) (*base.Response, *gortsplib.ServerStream, error) {
+	c.log(logger.debug,"onDescribe: Begin")
 	res := c.pathManager.describe(pathDescribeReq{
 		pathName: ctx.Path,
 		url:      ctx.Request.URL,
@@ -260,6 +271,7 @@ func (c *rtspConn) onDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 			pathUser conf.Credential,
 			pathPass conf.Credential,
 		) error {
+			c.log(logger.debug,"onDescribe: End-1")
 			return c.authenticate(ctx.Path, pathIPs, pathUser, pathPass, false, ctx.Request, ctx.Query)
 		},
 	})
@@ -267,21 +279,25 @@ func (c *rtspConn) onDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 	if res.err != nil {
 		switch terr := res.err.(type) {
 		case pathErrAuthNotCritical:
+			c.log(logger.debug,"onDescribe: End-2")
 			c.log(logger.Debug, "non-critical authentication error: %s", terr.message)
 			return terr.response, nil, nil
 
 		case pathErrAuthCritical:
 			// wait some seconds to stop brute force attacks
 			<-time.After(rtspConnPauseAfterAuthError)
+			c.log(logger.debug,"onDescribe: End-3")
 
 			return terr.response, nil, errors.New(terr.message)
 
 		case pathErrNoOnePublishing:
+			c.log(logger.debug,"onDescribe: End-4")
 			return &base.Response{
 				StatusCode: base.StatusNotFound,
 			}, nil, res.err
 
 		default:
+			c.log(logger.debug,"onDescribe: End-5")
 			return &base.Response{
 				StatusCode: base.StatusBadRequest,
 			}, nil, res.err
@@ -289,6 +305,7 @@ func (c *rtspConn) onDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 	}
 
 	if res.redirect != "" {
+		c.log(logger.debug,"onDescribe: End-6")
 		return &base.Response{
 			StatusCode: base.StatusMovedPermanently,
 			Header: base.Header{
@@ -297,6 +314,7 @@ func (c *rtspConn) onDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 		}, nil, nil
 	}
 
+	c.log(logger.debug,"onDescribe: End-99")
 	return &base.Response{
 		StatusCode: base.StatusOK,
 	}, res.stream.rtspStream, nil
