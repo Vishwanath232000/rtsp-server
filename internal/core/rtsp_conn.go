@@ -239,7 +239,7 @@ func (c *rtspConn) authenticate(
 // onClose is called by rtspServer.
 func (c *rtspConn) onClose(err error) {
 	c.log(logger.Debug, "rtsp_conn.go> onClose: Begin")
-	c.log(logger.Info, "closed (%v)", err)
+	// c.log(logger.Info, "closed (%v)", err)
 
 	if c.onConnectCmd != nil {
 		c.onConnectCmd.Close()
