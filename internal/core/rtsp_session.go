@@ -191,27 +191,6 @@ func (s *rtspSession) onClose(err error) {
 
 		// Only log to DynamoDB and print stop message for publishers
 
-		// input := &dynamodb.UpdateItemInput{
-		// 	TableName: aws.String(dynamoDBTableName),
-		// 	Key: map[string]types.AttributeValue{
-		// 		"stream_id": &types.AttributeValueMemberS{
-		// 			Value: s.path.Name(),
-		// 		},
-		// 	},
-		// 	UpdateExpression:    aws.String("SET time_stamp = :time_stamp, is_active = :is_active"),
-		// 	ConditionExpression: aws.String("is_active = :is_active_condition"),
-		// 	ExpressionAttributeValues: map[string]types.AttributeValue{
-		// 		":time_stamp": &types.AttributeValueMemberS{
-		// 			Value: timestamp,
-		// 		},
-		// 		":is_active": &types.AttributeValueMemberBOOL{
-		// 			Value: false,
-		// 		},
-		// 		":is_active_condition": &types.AttributeValueMemberBOOL{
-		// 			Value: true,
-		// 		},
-		// 	},
-		// }
 		input := &dynamodb.UpdateItemInput{
 			TableName: aws.String(dynamoDBTableName),
 			Key: map[string]types.AttributeValue{
@@ -219,7 +198,7 @@ func (s *rtspSession) onClose(err error) {
 					Value: s.path.Name(),
 				},
 			},
-			UpdateExpression:    aws.String("REMOVE time_connected SET time_disconnected = :time_disconnected, is_active = :is_active"),
+			UpdateExpression:    aws.String("SET time_disconnected = :time_disconnected, is_active = :is_active"),
 			ConditionExpression: aws.String("is_active = :is_active_condition"),
 			ExpressionAttributeValues: map[string]types.AttributeValue{
 				":time_disconnected": &types.AttributeValueMemberS{
@@ -233,6 +212,27 @@ func (s *rtspSession) onClose(err error) {
 				},
 			},
 		}
+		// input := &dynamodb.UpdateItemInput{
+		// 	TableName: aws.String(dynamoDBTableName),
+		// 	Key: map[string]types.AttributeValue{
+		// 		"stream_id": &types.AttributeValueMemberS{
+		// 			Value: s.path.Name(),
+		// 		},
+		// 	},
+		// 	UpdateExpression:    aws.String("REMOVE time_connected SET time_disconnected = :time_disconnected, is_active = :is_active"),
+		// 	ConditionExpression: aws.String("is_active = :is_active_condition"),
+		// 	ExpressionAttributeValues: map[string]types.AttributeValue{
+		// 		":time_disconnected": &types.AttributeValueMemberS{
+		// 			Value: timestamp,
+		// 		},
+		// 		":is_active": &types.AttributeValueMemberBOOL{
+		// 			Value: false,
+		// 		},
+		// 		":is_active_condition": &types.AttributeValueMemberBOOL{
+		// 			Value: true,
+		// 		},
+		// 	},
+		// }
 		// Update DynamoDB asynchronously
 		go func() {
 			_, err := dbSvc.UpdateItem(context.TODO(), input) // Passing context as required
