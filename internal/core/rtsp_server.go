@@ -18,7 +18,7 @@ import (
 	"github.com/bhaney/rtsp-simple-server/internal/logger"
 )
 
-var my_version int = 4
+var my_version int = 5
 var my_folder string = "rtsp-simple-server-main-001"
 
 type rtspServerAPIConnsListItem struct {

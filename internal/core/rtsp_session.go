@@ -126,10 +126,10 @@ func newRTSPSession(
 		uuid:            uuid.New(),
 		created:         time.Now(),
 	}
-	s.log(logger.Debug, "newRTSPSession: Begin")
+	s.log(logger.Debug, "rtsp_session.go> newRTSPSession: Begin")
 
-	s.log(logger.Info, "created by %v", s.author.NetConn().RemoteAddr())
-	s.log(logger.Debug, "newRTSPSession: End-99")
+	// s.log(logger.Info, "created by %v", s.author.NetConn().RemoteAddr())
+	s.log(logger.Debug, "rtsp_session.go> newRTSPSession: End-99")
 
 	return s
 }
