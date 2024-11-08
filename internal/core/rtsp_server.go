@@ -18,6 +18,9 @@ import (
 	"github.com/bhaney/rtsp-simple-server/internal/logger"
 )
 
+var my_version int = 2
+var my_folder string = "rtsp-simple-server-main-001"
+
 type rtspServerAPIConnsListItem struct {
 	Created       time.Time `json:"created"`
 	RemoteAddr    string    `json:"remoteAddr"`
@@ -145,8 +148,7 @@ func newRTSPServer(
 		sessions:                  make(map[*gortsplib.ServerSession]*rtspSession),
 	}
 
-	// s.log(logger.Debug, "rtsp_server.go> newRTSPServer: Begin: 1 rtsp_server.go")
-	s.log(logger.Debug, "rtsp_server.go> newRTSPServer: rtsp-simple-server-main-001[1] Begin")
+	s.log(logger.Debug, "rtsp_server.go> newRTSPServer: %s [%d] Begin", my_folder, my_version)
 	s.srv = &gortsplib.Server{
 		Handler:          s,
 		ReadTimeout:      time.Duration(readTimeout),
@@ -284,7 +286,8 @@ func (s *rtspServer) OnConnClose(ctx *gortsplib.ServerHandlerOnConnCloseCtx) {
 	delete(s.conns, ctx.Conn)
 	s.mutex.Unlock()
 	c.onClose(ctx.Error)
-	s.log(logger.Debug, "rtsp_server.go> OnConnClose: End-99")
+	s.log(logger.Debug, "rtsp_server.go> newRTSPServer: %s [%d] End-99", my_folder, my_version)
+	// s.log(logger.Debug, "rtsp_server.go> OnConnClose: End-99")
 
 }
 
@@ -390,10 +393,10 @@ func (s *rtspServer) OnPause(ctx *gortsplib.ServerHandlerOnPauseCtx) (*base.Resp
 
 // OnPacketRTP implements gortsplib.ServerHandlerOnPacketRTP.
 func (s *rtspServer) OnPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
-	s.log(logger.Debug, "rtsp_server.go> OnPacketRTP: Begin")
+	// s.log(logger.Debug, "rtsp_server.go> OnPacketRTP: Begin")
 	se := ctx.Session.UserData().(*rtspSession)
 	se.onPacketRTP(ctx)
-	s.log(logger.Debug, "rtsp_server.go> OnPacketRTP: End-99")
+	// s.log(logger.Debug, "rtsp_server.go> OnPacketRTP: End-99")
 }
 
 // OnDecodeError implements gortsplib.ServerHandlerOnOnDecodeError.
