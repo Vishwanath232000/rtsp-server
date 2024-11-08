@@ -188,12 +188,13 @@ func (s *rtspSession) onClose(err error) {
 		activeSessionCount--
 		formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
 		countMutex.Unlock()
+		timestamp := time.Now().UTC().Format(time.RFC3339)
 
-		fmt.Printf("| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+		fmt.Printf(time_stamp," | %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 		s.log(logger.Info,"| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 		
 		// Only log to DynamoDB and print stop message for publishers
-		timestamp := time.Now().UTC().Format(time.RFC3339)
+		
 		
 		input := &dynamodb.UpdateItemInput{
 			TableName: aws.String(dynamoDBTableName),
@@ -441,10 +442,11 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	activeSessionCount++
 	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
 	countMutex.Unlock()
-	s.log(logger.Debug,"onRecord: End-2")
+	// s.log(logger.Debug,"onRecord: End-2")
+	timestamp := time.Now().UTC().Format(time.RFC3339)
 
-	fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
-	
+	fmt.Printf(time_stamp," | %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+
 	s.log(logger.Info,"| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
 
@@ -452,7 +454,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
 
 	// Log to DynamoDB for publishers
-	timestamp := time.Now().UTC().Format(time.RFC3339)
+	
 	input := &dynamodb.PutItemInput{
 		TableName: aws.String(dynamoDBTableName),
 		Item: map[string]types.AttributeValue{
@@ -576,7 +578,7 @@ func (s *rtspSession) apiSourceDescribe() interface{} {
 
 // onPacketRTP is called by rtspServer.
 func (s *rtspSession) onPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
-	s.log(logger.Debug,"onPacketRTP: Begin")
+	s.log(logger.Debug,"rtsp_session.go> onPacketRTP: Begin")
 	var err error
 
 	switch s.session.AnnouncedTracks()[ctx.TrackID].(type) {
@@ -605,7 +607,7 @@ func (s *rtspSession) onPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
 	if err != nil {
 		s.log(logger.Warn, "%v", err)
 	}
-	s.log(logger.Debug,"onPacketRTP: End-99")
+	s.log(logger.Debug,"rtsp_session.go> onPacketRTP: End-99")
 }
 
 // onDecodeError is called by rtspServer.

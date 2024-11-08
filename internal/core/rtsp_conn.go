@@ -73,9 +73,9 @@ func newRTSPConn(
 		uuid:                      uuid.New(),
 		created:                   time.Now(),
 	}
-	c.log(logger.Debug,"newRTSPConn: Begin")
+	c.log(logger.Debug,"rtsp_conn.go> newRTSPConn: Begin: %s",c.uuid)
 
-	c.log(logger.Info, "opened rtspAdress:[%s]| conn:[%s] | parent[%s]",rtspAddress,conn,parent)
+	// c.log(logger.Info, "opened rtspAdress:[%s]| conn:[%s] | parent[%s]",rtspAddress,conn,parent)
 
 	if c.runOnConnect != "" {
 		c.log(logger.Info, "runOnConnect command started")
@@ -93,7 +93,7 @@ func newRTSPConn(
 			})
 	}
 
-	c.log(logger.Debug,"newRTSPConn: End-99")
+	c.log(logger.Debug,"rtsp_conn.go> newRTSPConn: End-99: %s",c.uuid)
 	return c
 }
 
@@ -124,7 +124,7 @@ func (c *rtspConn) authenticate(
 	req *base.Request,
 	query string,
 ) error {
-	c.log(logger.Debug,"authenticate: Begin")
+	c.log(logger.Debug,"rtsp_conn.go> authenticate: Begin")
 	if c.externalAuthenticationURL != "" {
 		username := ""
 		password := ""
@@ -181,6 +181,7 @@ func (c *rtspConn) authenticate(
 	if pathIPs != nil {
 		ip := c.ip()
 		if !ipEqualOrInRange(ip, pathIPs) {
+			c.log(logger.Debug,"rtsp_conn.go> authenticate: End-1")
 			return pathErrAuthCritical{
 				message: fmt.Sprintf("IP '%s' not allowed", ip),
 				response: &base.Response{
@@ -216,7 +217,7 @@ func (c *rtspConn) authenticate(
 					},
 				}
 			}
-			c.log(logger.Debug,"authenticate: End-1")
+			c.log(logger.Debug,"rtsp_conn.go> authenticate: End-2")
 
 			return pathErrAuthNotCritical{
 				response: &base.Response{
@@ -231,13 +232,13 @@ func (c *rtspConn) authenticate(
 		// login successful, reset authFailures
 		c.authFailures = 0
 	}
-    c.log(logger.Debug,"authenticate: End-99")
+    c.log(logger.Debug,"rtsp_conn.go> authenticate: End-99")
 	return nil
 }
 
 // onClose is called by rtspServer.
 func (c *rtspConn) onClose(err error) {
-	c.log(logger.Debug,"onClose: Begin")
+	c.log(logger.Debug,"rtsp_conn.go> onClose: Begin")
 	c.log(logger.Info, "closed (%v)", err)
 	
 
@@ -245,7 +246,7 @@ func (c *rtspConn) onClose(err error) {
 		c.onConnectCmd.Close()
 		c.log(logger.Info, "runOnConnect command stopped")
 	}
-	c.log(logger.Debug,"onClose: End-99")
+	c.log(logger.Debug,"rtsp_conn.go> onClose: End-99")
 }
 
 // onRequest is called by rtspServer.
@@ -262,7 +263,7 @@ func (c *rtspConn) OnResponse(res *base.Response) {
 // onDescribe is called by rtspServer.
 func (c *rtspConn) onDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 ) (*base.Response, *gortsplib.ServerStream, error) {
-	c.log(logger.Debug,"onDescribe: Begin")
+	c.log(logger.Debug,"rtsp_conn.go> onDescribe: Begin")
 	res := c.pathManager.describe(pathDescribeReq{
 		pathName: ctx.Path,
 		url:      ctx.Request.URL,
@@ -279,25 +280,25 @@ func (c *rtspConn) onDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 	if res.err != nil {
 		switch terr := res.err.(type) {
 		case pathErrAuthNotCritical:
-			c.log(logger.Debug,"onDescribe: End-2")
 			c.log(logger.Debug, "non-critical authentication error: %s", terr.message)
+			c.log(logger.Debug,"rtsp_conn.go> onDescribe: End-2")
 			return terr.response, nil, nil
 
 		case pathErrAuthCritical:
 			// wait some seconds to stop brute force attacks
 			<-time.After(rtspConnPauseAfterAuthError)
-			c.log(logger.Debug,"onDescribe: End-3")
+			c.log(logger.Debug,"rtsp_conn.go> onDescribe: End-3")
 
 			return terr.response, nil, errors.New(terr.message)
 
 		case pathErrNoOnePublishing:
-			c.log(logger.Debug,"onDescribe: End-4")
+			c.log(logger.Debug,"rtsp_conn.go> onDescribe: End-4")
 			return &base.Response{
 				StatusCode: base.StatusNotFound,
 			}, nil, res.err
 
 		default:
-			c.log(logger.Debug,"onDescribe: End-5")
+			c.log(logger.Debug,"rtsp_conn.go> onDescribe: End-5")
 			return &base.Response{
 				StatusCode: base.StatusBadRequest,
 			}, nil, res.err
@@ -305,7 +306,7 @@ func (c *rtspConn) onDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 	}
 
 	if res.redirect != "" {
-		c.log(logger.Debug,"onDescribe: End-6")
+		c.log(logger.Debug,"rtsp_conn.go> onDescribe: End-6")
 		return &base.Response{
 			StatusCode: base.StatusMovedPermanently,
 			Header: base.Header{
@@ -314,7 +315,7 @@ func (c *rtspConn) onDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 		}, nil, nil
 	}
 
-	c.log(logger.Debug,"onDescribe: End-99")
+	c.log(logger.Debug,"rtsp_conn.go> onDescribe: End-99")
 	return &base.Response{
 		StatusCode: base.StatusOK,
 	}, res.stream.rtspStream, nil
