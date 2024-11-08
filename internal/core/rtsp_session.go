@@ -186,8 +186,8 @@ func (s *rtspSession) onClose(err error) {
 		countMutex.Unlock()
 		timestamp := time.Now().UTC().Format(time.RFC3339)
 
-		fmt.Printf(timestamp, " | %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
-		s.log(logger.Info, "| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+		// fmt.Printf(timestamp, " | %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+		s.log(logger.Info, "| %s | STOPPED | %s\n", formattedSessionCount, s.path.Name())
 
 		// Only log to DynamoDB and print stop message for publishers
 
@@ -416,14 +416,14 @@ func (s *rtspSession) onPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Respo
 }
 
 func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
-	s.log(logger.Debug, "onRecord: Begin")
+	s.log(logger.Debug, "rtsp_session.go> onRecord: Begin")
 	res := s.path.publisherStart(pathPublisherStartReq{
 		author:             s,
 		tracks:             s.session.AnnouncedTracks(),
 		generateRTPPackets: false,
 	})
 	if res.err != nil {
-		s.log(logger.Debug, "onRecord: End-1")
+		s.log(logger.Debug, "rtsp_session.go> onRecord: End-1")
 		return &base.Response{
 			StatusCode: base.StatusBadRequest,
 		}, res.err
@@ -436,9 +436,9 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// s.log(logger.Debug,"onRecord: End-2")
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
-	fmt.Printf(timestamp, " | %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+	// fmt.Printf(timestamp, " | %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
-	s.log(logger.Info, "| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
+	s.log(logger.Info, "| %s | STARTED | %s\n", formattedSessionCount, s.path.Name())
 
 	// Log publisher start
 	// fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
@@ -488,7 +488,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 
 	// fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
-	s.log(logger.Debug, "onRecord: End-99")
+	s.log(logger.Debug, "rtsp_session.go> onRecord: End-99")
 
 	return &base.Response{
 		StatusCode: base.StatusOK,
