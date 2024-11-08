@@ -567,7 +567,7 @@ func (s *rtspSession) apiSourceDescribe() interface{} {
 
 // onPacketRTP is called by rtspServer.
 func (s *rtspSession) onPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
-	s.log(logger.Debug, "rtsp_session.go> onPacketRTP: Begin")
+	//s.log(logger.Debug, "rtsp_session.go> onPacketRTP: Begin")
 	var err error
 
 	switch s.session.AnnouncedTracks()[ctx.TrackID].(type) {
@@ -596,7 +596,7 @@ func (s *rtspSession) onPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
 	if err != nil {
 		s.log(logger.Warn, "%v", err)
 	}
-	s.log(logger.Debug, "rtsp_session.go> onPacketRTP: End-99")
+	//s.log(logger.Debug, "rtsp_session.go> onPacketRTP: End-99")
 }
 
 // onDecodeError is called by rtspServer.

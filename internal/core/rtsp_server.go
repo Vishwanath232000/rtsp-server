@@ -125,7 +125,7 @@ func newRTSPServer(
 	pathManager *pathManager,
 	parent rtspServerParent,
 ) (*rtspServer, error) {
-	
+
 	ctx, ctxCancel := context.WithCancel(parentCtx)
 
 	s := &rtspServer{
@@ -145,7 +145,8 @@ func newRTSPServer(
 		sessions:                  make(map[*gortsplib.ServerSession]*rtspSession),
 	}
 
-	s.log(logger.Debug,"rtsp_server.go> newRTSPServer: Begin")
+	// s.log(logger.Debug, "rtsp_server.go> newRTSPServer: Begin: 1 rtsp_server.go")
+	s.log(logger.Debug, "rtsp_server.go> newRTSPServer: rtsp-simple-server-main-001[1] Begin")
 	s.srv = &gortsplib.Server{
 		Handler:          s,
 		ReadTimeout:      time.Duration(readTimeout),
@@ -169,7 +170,7 @@ func newRTSPServer(
 	if isTLS {
 		cert, err := tls.LoadX509KeyPair(serverCert, serverKey)
 		if err != nil {
-			s.log(logger.Debug,"rtsp_server.go> newRTSPServer: End-1")
+			s.log(logger.Debug, "rtsp_server.go> newRTSPServer: End-1")
 			return nil, err
 		}
 
@@ -178,7 +179,7 @@ func newRTSPServer(
 
 	err := s.srv.Start()
 	if err != nil {
-		s.log(logger.Debug,"rtsp_server.go> newRTSPServer: End-2")
+		s.log(logger.Debug, "rtsp_server.go> newRTSPServer: End-2")
 		return nil, err
 	}
 
@@ -194,7 +195,7 @@ func newRTSPServer(
 
 	s.wg.Add(1)
 	go s.run()
-	s.log(logger.Debug,"rtsp_server.go> newRTSPServer: End-99")
+	s.log(logger.Debug, "rtsp_server.go> newRTSPServer: End-99")
 
 	return s, nil
 }
@@ -204,23 +205,23 @@ func (s *rtspServer) log(level logger.Level, format string, args ...interface{})
 		if s.isTLS {
 			return "RTSPS"
 		}
-		
+
 		return "RTSP"
 	}()
 	s.parent.Log(level, "[%s] "+format, append([]interface{}{label}, args...)...)
 }
 
 func (s *rtspServer) close() {
-	s.log(logger.Debug,"rtsp_server.go> close: Begin")
+	s.log(logger.Debug, "rtsp_server.go> close: Begin")
 	s.log(logger.Info, "listener is closing")
 	s.ctxCancel()
 	s.wg.Wait()
-	s.log(logger.Debug,"rtsp_server.go> close: End-99")
-	
+	s.log(logger.Debug, "rtsp_server.go> close: End-99")
+
 }
 
 func (s *rtspServer) run() {
-	s.log(logger.Debug,"rtsp_server.go> run: Begin")
+	s.log(logger.Debug, "rtsp_server.go> run: Begin")
 	defer s.wg.Done()
 
 	serverErr := make(chan error)
@@ -249,12 +250,12 @@ outer:
 			s.metrics.rtspsServerSet(nil)
 		}
 	}
-	s.log(logger.Debug,"rtsp_server.go> run: End-99")
+	s.log(logger.Debug, "rtsp_server.go> run: End-99")
 }
 
 // OnConnOpen implements gortsplib.ServerHandlerOnConnOpen.
 func (s *rtspServer) OnConnOpen(ctx *gortsplib.ServerHandlerOnConnOpenCtx) {
-	s.log(logger.Debug,"rtsp_server.go> OnConnOpen: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnConnOpen: Begin")
 	c := newRTSPConn(
 		s.externalAuthenticationURL,
 		s.rtspAddress,
@@ -271,42 +272,42 @@ func (s *rtspServer) OnConnOpen(ctx *gortsplib.ServerHandlerOnConnOpenCtx) {
 	s.mutex.Unlock()
 
 	ctx.Conn.SetUserData(c)
-	s.log(logger.Debug,"rtsp_server.go> OnConnOpen: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnConnOpen: End-99")
 
 }
 
 // OnConnClose implements gortsplib.ServerHandlerOnConnClose.
 func (s *rtspServer) OnConnClose(ctx *gortsplib.ServerHandlerOnConnCloseCtx) {
-	s.log(logger.Debug,"rtsp_server.go> OnConnClose: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnConnClose: Begin")
 	s.mutex.Lock()
 	c := s.conns[ctx.Conn]
 	delete(s.conns, ctx.Conn)
 	s.mutex.Unlock()
 	c.onClose(ctx.Error)
-	s.log(logger.Debug,"rtsp_server.go> OnConnClose: End-99")
-	
+	s.log(logger.Debug, "rtsp_server.go> OnConnClose: End-99")
+
 }
 
 // OnRequest implements gortsplib.ServerHandlerOnRequest.
 func (s *rtspServer) OnRequest(sc *gortsplib.ServerConn, req *base.Request) {
-	s.log(logger.Debug,"rtsp_server.go> OnRequest: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnRequest: Begin")
 	c := sc.UserData().(*rtspConn)
 	c.onRequest(req)
-	s.log(logger.Debug,"rtsp_server.go> OnRequest: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnRequest: End-99")
 
 }
 
 // OnResponse implements gortsplib.ServerHandlerOnResponse.
 func (s *rtspServer) OnResponse(sc *gortsplib.ServerConn, res *base.Response) {
-	s.log(logger.Debug,"rtsp_server.go> OnResponse: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnResponse: Begin")
 	c := sc.UserData().(*rtspConn)
 	c.OnResponse(res)
-	s.log(logger.Debug,"rtsp_server.go> OnResponse: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnResponse: End-99")
 }
 
 // OnSessionOpen implements gortsplib.ServerHandlerOnSessionOpen.
 func (s *rtspServer) OnSessionOpen(ctx *gortsplib.ServerHandlerOnSessionOpenCtx) {
-	s.log(logger.Debug,"rtsp_server.go> OnSessionOpen: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnSessionOpen: Begin")
 	se := newRTSPSession(
 		s.isTLS,
 		s.protocols,
@@ -319,12 +320,12 @@ func (s *rtspServer) OnSessionOpen(ctx *gortsplib.ServerHandlerOnSessionOpenCtx)
 	s.sessions[ctx.Session] = se
 	s.mutex.Unlock()
 	ctx.Session.SetUserData(se)
-	s.log(logger.Debug,"rtsp_server.go> OnSessionOpen: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnSessionOpen: End-99")
 }
 
 // OnSessionClose implements gortsplib.ServerHandlerOnSessionClose.
 func (s *rtspServer) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) {
-	s.log(logger.Debug,"rtsp_server.go> OnSessionClose: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnSessionClose: Begin")
 	s.mutex.Lock()
 	se := s.sessions[ctx.Session]
 	delete(s.sessions, ctx.Session)
@@ -333,83 +334,83 @@ func (s *rtspServer) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCt
 	if se != nil {
 		se.onClose(ctx.Error)
 	}
-	s.log(logger.Debug,"rtsp_server.go> OnSessionClose: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnSessionClose: End-99")
 }
 
 // OnDescribe implements gortsplib.ServerHandlerOnDescribe.
 func (s *rtspServer) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx,
 ) (*base.Response, *gortsplib.ServerStream, error) {
-	s.log(logger.Debug,"rtsp_server.go> OnDescribe: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnDescribe: Begin")
 	c := ctx.Conn.UserData().(*rtspConn)
-	s.log(logger.Debug,"rtsp_server.go> OnDescribe: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnDescribe: End-99")
 	return c.onDescribe(ctx)
 }
 
 // OnAnnounce implements gortsplib.ServerHandlerOnAnnounce.
 func (s *rtspServer) OnAnnounce(ctx *gortsplib.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
-	s.log(logger.Debug,"rtsp_server.go> OnAnnounce: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnAnnounce: Begin")
 	c := ctx.Conn.UserData().(*rtspConn)
 	se := ctx.Session.UserData().(*rtspSession)
-	s.log(logger.Debug,"rtsp_server.go> OnAnnounce: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnAnnounce: End-99")
 	return se.onAnnounce(c, ctx)
 }
 
 // OnSetup implements gortsplib.ServerHandlerOnSetup.
 func (s *rtspServer) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *gortsplib.ServerStream, error) {
-	s.log(logger.Debug,"rtsp_server.go> OnSetup: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnSetup: Begin")
 	c := ctx.Conn.UserData().(*rtspConn)
 	se := ctx.Session.UserData().(*rtspSession)
-	s.log(logger.Debug,"rtsp_server.go> OnSetup: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnSetup: End-99")
 	return se.onSetup(c, ctx)
 }
 
 // OnPlay implements gortsplib.ServerHandlerOnPlay.
 func (s *rtspServer) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error) {
-	s.log(logger.Debug,"rtsp_server.go> OnPlay: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnPlay: Begin")
 	se := ctx.Session.UserData().(*rtspSession)
-	s.log(logger.Debug,"rtsp_server.go> OnPlay: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnPlay: End-99")
 	return se.onPlay(ctx)
 }
 
 // OnRecord implements gortsplib.ServerHandlerOnRecord.
 func (s *rtspServer) OnRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
-	s.log(logger.Debug,"rtsp_server.go> OnRecord: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnRecord: Begin")
 	se := ctx.Session.UserData().(*rtspSession)
-	s.log(logger.Debug,"rtsp_server.go> OnRecord: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnRecord: End-99")
 	return se.onRecord(ctx)
 }
 
 // OnPause implements gortsplib.ServerHandlerOnPause.
 func (s *rtspServer) OnPause(ctx *gortsplib.ServerHandlerOnPauseCtx) (*base.Response, error) {
-	s.log(logger.Debug,"rtsp_server.go> OnPause: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnPause: Begin")
 	se := ctx.Session.UserData().(*rtspSession)
-	s.log(logger.Debug,"rtsp_server.go> OnPause: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnPause: End-99")
 	return se.onPause(ctx)
 }
 
 // OnPacketRTP implements gortsplib.ServerHandlerOnPacketRTP.
 func (s *rtspServer) OnPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
-	s.log(logger.Debug,"rtsp_server.go> OnPacketRTP: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnPacketRTP: Begin")
 	se := ctx.Session.UserData().(*rtspSession)
 	se.onPacketRTP(ctx)
-	s.log(logger.Debug,"rtsp_server.go> OnPacketRTP: End-99")
+	s.log(logger.Debug, "rtsp_server.go> OnPacketRTP: End-99")
 }
 
 // OnDecodeError implements gortsplib.ServerHandlerOnOnDecodeError.
 func (s *rtspServer) OnDecodeError(ctx *gortsplib.ServerHandlerOnDecodeErrorCtx) {
-	s.log(logger.Debug,"rtsp_server.go> OnDecodeError: Begin")
+	s.log(logger.Debug, "rtsp_server.go> OnDecodeError: Begin")
 	se := ctx.Session.UserData().(*rtspSession)
 	se.onDecodeError(ctx)
-	s.log(logger.Debug,"rtsp_server.go> OnDecodeError: End-99")
-	
+	s.log(logger.Debug, "rtsp_server.go> OnDecodeError: End-99")
+
 }
 
 // apiConnsList is called by api and metrics.
 func (s *rtspServer) apiConnsList() rtspServerAPIConnsListRes {
-	s.log(logger.Debug,"rtsp_server.go> apiConnsList: Begin")
+	s.log(logger.Debug, "rtsp_server.go> apiConnsList: Begin")
 	select {
 	case <-s.ctx.Done():
-		s.log(logger.Debug,"rtsp_server.go> apiConnsList: End-1")
+		s.log(logger.Debug, "rtsp_server.go> apiConnsList: End-1")
 		return rtspServerAPIConnsListRes{err: fmt.Errorf("terminated")}
 	default:
 	}
@@ -430,16 +431,16 @@ func (s *rtspServer) apiConnsList() rtspServerAPIConnsListRes {
 		}
 	}
 
-	s.log(logger.Debug,"rtsp_server.go> apiConnsList: End-99")
+	s.log(logger.Debug, "rtsp_server.go> apiConnsList: End-99")
 	return rtspServerAPIConnsListRes{data: data}
 }
 
 // apiSessionsList is called by api and metrics.
 func (s *rtspServer) apiSessionsList() rtspServerAPISessionsListRes {
-	s.log(logger.Debug,"rtsp_server.go> apiSessionsList: Begin")
+	s.log(logger.Debug, "rtsp_server.go> apiSessionsList: Begin")
 	select {
 	case <-s.ctx.Done():
-		s.log(logger.Debug,"rtsp_server.go> apiSessionsList: End-1")
+		s.log(logger.Debug, "rtsp_server.go> apiSessionsList: End-1")
 		return rtspServerAPISessionsListRes{err: fmt.Errorf("terminated")}
 	default:
 	}
@@ -459,32 +460,32 @@ func (s *rtspServer) apiSessionsList() rtspServerAPISessionsListRes {
 				switch s.safeState() {
 				case gortsplib.ServerSessionStatePrePlay,
 					gortsplib.ServerSessionStatePlay:
-					s.log(logger.Debug,"apiSessionsList: End-2")
+					s.log(logger.Debug, "apiSessionsList: End-2")
 					return "read"
 
 				case gortsplib.ServerSessionStatePreRecord,
 					gortsplib.ServerSessionStateRecord:
-					s.log(logger.Debug,"apiSessionsList: End-3")
+					s.log(logger.Debug, "apiSessionsList: End-3")
 					return "publish"
 				}
-				s.log(logger.Debug,"apiSessionsList: End-4")
+				s.log(logger.Debug, "apiSessionsList: End-4")
 				return "idle"
 			}(),
 			BytesReceived: s.session.BytesReceived(),
 			BytesSent:     s.session.BytesSent(),
 		}
 	}
-	s.log(logger.Debug,"rtsp_server.go> apiSessionsList: End-99")
+	s.log(logger.Debug, "rtsp_server.go> apiSessionsList: End-99")
 
 	return rtspServerAPISessionsListRes{data: data}
 }
 
 // apiSessionsKick is called by api.
 func (s *rtspServer) apiSessionsKick(id string) rtspServerAPISessionsKickRes {
-	s.log(logger.Debug,"rtsp_server.go> apiSessionsKick: Begin")
+	s.log(logger.Debug, "rtsp_server.go> apiSessionsKick: Begin")
 	select {
 	case <-s.ctx.Done():
-		s.log(logger.Debug,"rtsp_server.go> apiSessionsKick: End-1")
+		s.log(logger.Debug, "rtsp_server.go> apiSessionsKick: End-1")
 		return rtspServerAPISessionsKickRes{err: fmt.Errorf("terminated")}
 	default:
 	}
@@ -497,11 +498,11 @@ func (s *rtspServer) apiSessionsKick(id string) rtspServerAPISessionsKickRes {
 			se.close()
 			delete(s.sessions, key)
 			se.onClose(liberrors.ErrServerTerminated{})
-			s.log(logger.Debug,"rtsp_server.go> apiSessionsKick: End-2")
+			s.log(logger.Debug, "rtsp_server.go> apiSessionsKick: End-2")
 			return rtspServerAPISessionsKickRes{}
 		}
 	}
-	s.log(logger.Debug,"rtsp_server.go> apiSessionsKick: End-99")
+	s.log(logger.Debug, "rtsp_server.go> apiSessionsKick: End-99")
 
 	return rtspServerAPISessionsKickRes{err: fmt.Errorf("not found")}
 }
