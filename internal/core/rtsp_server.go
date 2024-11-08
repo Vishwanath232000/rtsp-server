@@ -18,7 +18,7 @@ import (
 	"github.com/bhaney/rtsp-simple-server/internal/logger"
 )
 
-var my_version int = 7
+var my_version int = 8
 var my_folder string = "rtsp-simple-server-main-001"
 
 type rtspServerAPIConnsListItem struct {
@@ -147,7 +147,7 @@ func newRTSPServer(
 		conns:                     make(map[*gortsplib.ServerConn]*rtspConn),
 		sessions:                  make(map[*gortsplib.ServerSession]*rtspSession),
 	}
-	fmt.Printf("rtsp_server.go> newRTSPServer: %s: Version: %d", my_folder, my_version)
+	fmt.Printf("rtsp_server.go> newRTSPServer: %s: Version: %d\n", my_folder, my_version)
 	s.log(logger.Debug, "rtsp_server.go> newRTSPServer: %s [%d] Begin", my_folder, my_version)
 	s.srv = &gortsplib.Server{
 		Handler:          s,
