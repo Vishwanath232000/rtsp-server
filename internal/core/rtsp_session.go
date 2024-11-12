@@ -39,6 +39,7 @@ var (
 	activeSessionCount int
 	countMutex         sync.Mutex
 	dynamoDBTableName  string
+	fargateId          string
 )
 
 func init() {
@@ -59,23 +60,10 @@ func init() {
 		dynamoDBTableName = "sam-rtsp-virtual-streams"
 
 	}
+	fargateId = getFargateID()
+
 }
 
-// func getInstanceID() string {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-// 	defer cancel()
-
-// 	client := imds.New(imds.Options{})
-
-// 	// Get instance ID from IMDS
-// 	instanceID, err := client.GetInstanceIdentityDocument(ctx, &imds.GetInstanceIdentityDocumentInput{})
-
-// 	if err != nil {
-// 		return "local-instance" // fallback for local testing
-// 	}
-
-//		return instanceID.InstanceID
-//	}
 func getFargateID() string {
 	// Define the ECS metadata endpoint for Fargate
 	const fargateMetadataEndpoint = "http://169.254.170.2/v2/metadata"
@@ -87,14 +75,14 @@ func getFargateID() string {
 	req, err := http.NewRequestWithContext(ctx, "GET", fargateMetadataEndpoint, nil)
 	if err != nil {
 		log.Printf("Error creating request for Fargate metadata: %v", err)
-		return "local-instance" // fallback for local testing
+		return "task-id" // fallback for local testing
 	}
 
 	// Perform the HTTP request
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("Error retrieving Fargate metadata: %v", err)
-		return "local-instance" // fallback for local testing
+		return "task-id" // fallback for local testing
 	}
 	defer resp.Body.Close()
 
@@ -104,7 +92,7 @@ func getFargateID() string {
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
 		log.Printf("Error decoding Fargate metadata JSON: %v", err)
-		return "local-instance" // fallback for local testing
+		return "task-id" // fallback for local testing
 	}
 
 	// Extract the Task ID from the Task ARN
@@ -516,7 +504,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 				Value: true,
 			},
 			"rstp_server_id": &types.AttributeValueMemberS{
-				Value: getFargateID(),
+				Value: fargateId,
 			},
 			"session_id": &types.AttributeValueMemberS{
 				Value: s.uuid.String(),
