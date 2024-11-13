@@ -40,6 +40,7 @@ var (
 	countMutex         sync.Mutex
 	dynamoDBTableName  string
 	fargateId          string
+	fargateIP          string
 )
 
 func init() {
@@ -60,11 +61,51 @@ func init() {
 		dynamoDBTableName = "sam-rtsp-virtual-streams"
 
 	}
-	fargateId = getFargateID()
+	fargateId, fargateIP = getFargateMetadata()
 
 }
 
-func getFargateID() string {
+// func getFargateID() string {
+// 	// Define the ECS metadata endpoint for Fargate
+// 	const fargateMetadataEndpoint = "http://169.254.170.2/v2/metadata"
+
+// 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+// 	defer cancel()
+
+// 	// Create an HTTP client to request the metadata
+// 	req, err := http.NewRequestWithContext(ctx, "GET", fargateMetadataEndpoint, nil)
+// 	if err != nil {
+// 		log.Printf("Error creating request for Fargate metadata: %v", err)
+// 		return "task-id" // fallback for local testing
+// 	}
+
+// 	// Perform the HTTP request
+// 	resp, err := http.DefaultClient.Do(req)
+// 	if err != nil {
+// 		log.Printf("Error retrieving Fargate metadata: %v", err)
+// 		return "task-id" // fallback for local testing
+// 	}
+// 	defer resp.Body.Close()
+
+// 	// Decode the JSON response
+// 	var metadata struct {
+// 		TaskARN string `json:"TaskARN"`
+// 	}
+// 	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+// 		log.Printf("Error decoding Fargate metadata JSON: %v", err)
+// 		return "task-id" // fallback for local testing
+// 	}
+
+// 	// Extract the Task ID from the Task ARN
+// 	arnParts := strings.Split(metadata.TaskARN, "/")
+// 	if len(arnParts) > 1 {
+// 		return arnParts[len(arnParts)-1] // Task ID is the last part of the ARN
+// 	}
+
+//		return "task-id" // fallback if parsing fails
+//	}
+
+func getFargateMetadata() (string, string) {
 	// Define the ECS metadata endpoint for Fargate
 	const fargateMetadataEndpoint = "http://169.254.170.2/v2/metadata"
 
@@ -75,33 +116,47 @@ func getFargateID() string {
 	req, err := http.NewRequestWithContext(ctx, "GET", fargateMetadataEndpoint, nil)
 	if err != nil {
 		log.Printf("Error creating request for Fargate metadata: %v", err)
-		return "task-id" // fallback for local testing
+		return "task-id", "local-ip" // fallback for local testing
 	}
 
 	// Perform the HTTP request
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("Error retrieving Fargate metadata: %v", err)
-		return "task-id" // fallback for local testing
+		return "task-id", "local-ip" // fallback for local testing
 	}
 	defer resp.Body.Close()
 
 	// Decode the JSON response
 	var metadata struct {
-		TaskARN string `json:"TaskARN"`
+		TaskARN    string `json:"TaskARN"`
+		Containers []struct {
+			Networks []struct {
+				IPv4Addresses  []string `json:"IPv4Addresses"`
+				PublicIPv4Addr string   `json:"PublicIPv4Address"`
+			} `json:"Networks"`
+		} `json:"Containers"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
 		log.Printf("Error decoding Fargate metadata JSON: %v", err)
-		return "task-id" // fallback for local testing
+		return "task-id", "local-ip" // fallback for local testing
 	}
 
 	// Extract the Task ID from the Task ARN
+	taskID := "task-id"
 	arnParts := strings.Split(metadata.TaskARN, "/")
 	if len(arnParts) > 1 {
-		return arnParts[len(arnParts)-1] // Task ID is the last part of the ARN
+		taskID = arnParts[len(arnParts)-1] // Task ID is the last part of the ARN
 	}
 
-	return "task-id" // fallback if parsing fails
+	// Extract the public IP address
+	publicIP := "local-ip"
+	if len(metadata.Containers) > 0 && len(metadata.Containers[0].Networks) > 0 {
+		publicIP = metadata.Containers[0].Networks[0].PublicIPv4Addr
+	}
+
+	return taskID, publicIP
 }
 
 const (
@@ -503,8 +558,11 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 			"is_active": &types.AttributeValueMemberBOOL{
 				Value: true,
 			},
-			"rstp_server_id": &types.AttributeValueMemberS{
+			"rtsp_server_id": &types.AttributeValueMemberS{
 				Value: fargateId,
+			},
+			"rtsp_server_ip": &types.AttributeValueMemberS{
+				Value: fargateIP,
 			},
 			"session_id": &types.AttributeValueMemberS{
 				Value: s.uuid.String(),
