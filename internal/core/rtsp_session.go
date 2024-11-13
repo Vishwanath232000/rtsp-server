@@ -43,6 +43,7 @@ var (
 	fargateIP             string
 	recordFargateMetadata map[string]types.AttributeValue
 )
+var Code_version = 4
 
 func init() {
 	// Load the AWS configuration from the environment, credentials file, or IAM role
