@@ -35,12 +35,13 @@ import (
 
 // Global variables
 var (
-	dbSvc              *dynamodb.Client
-	activeSessionCount int
-	countMutex         sync.Mutex
-	dynamoDBTableName  string
-	fargateId          string
-	fargateIP          string
+	dbSvc                 *dynamodb.Client
+	activeSessionCount    int
+	countMutex            sync.Mutex
+	dynamoDBTableName     string
+	fargateId             string
+	fargateIP             string
+	recordFargateMetadata map[string]types.AttributeValue
 )
 
 func init() {
@@ -62,101 +63,78 @@ func init() {
 
 	}
 	fargateId, fargateIP = getFargateMetadata()
+	recordFargateMetadata = getFargateMetadataMap()
 
 }
 
-// func getFargateID() string {
-// 	// Define the ECS metadata endpoint for Fargate
-// 	const fargateMetadataEndpoint = "http://169.254.170.2/v2/metadata"
-
-// 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-// 	defer cancel()
-
-// 	// Create an HTTP client to request the metadata
-// 	req, err := http.NewRequestWithContext(ctx, "GET", fargateMetadataEndpoint, nil)
-// 	if err != nil {
-// 		log.Printf("Error creating request for Fargate metadata: %v", err)
-// 		return "task-id" // fallback for local testing
-// 	}
-
-// 	// Perform the HTTP request
-// 	resp, err := http.DefaultClient.Do(req)
-// 	if err != nil {
-// 		log.Printf("Error retrieving Fargate metadata: %v", err)
-// 		return "task-id" // fallback for local testing
-// 	}
-// 	defer resp.Body.Close()
-
-// 	// Decode the JSON response
-// 	var metadata struct {
-// 		TaskARN string `json:"TaskARN"`
-// 	}
-// 	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
-// 		log.Printf("Error decoding Fargate metadata JSON: %v", err)
-// 		return "task-id" // fallback for local testing
-// 	}
-
-// 	// Extract the Task ID from the Task ARN
-// 	arnParts := strings.Split(metadata.TaskARN, "/")
-// 	if len(arnParts) > 1 {
-// 		return arnParts[len(arnParts)-1] // Task ID is the last part of the ARN
-// 	}
-
-//		return "task-id" // fallback if parsing fails
-//	}
-
 func getFargateMetadata() (string, string) {
-	// Define the ECS metadata endpoint for Fargate
-	const fargateMetadataEndpoint = "http://169.254.170.2/v2/metadata"
+	// Get the metadata URI from the environment variable
+	metadataUri := os.Getenv("ECS_CONTAINER_METADATA_URI_V4")
+	if metadataUri == "" {
+		metadataUri = "http://169.254.170.2/v4"
+	}
+
+	// Append /task to get full task metadata
+	taskEndpoint := metadataUri + "/task"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// Create an HTTP client to request the metadata
-	req, err := http.NewRequestWithContext(ctx, "GET", fargateMetadataEndpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", taskEndpoint, nil)
 	if err != nil {
 		log.Printf("Error creating request for Fargate metadata: %v", err)
-		return "task-id", "local-ip" // fallback for local testing
+		return "task-id", "local-ip"
 	}
 
-	// Perform the HTTP request
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("Error retrieving Fargate metadata: %v", err)
-		return "task-id", "local-ip" // fallback for local testing
+		return "task-id", "local-ip"
 	}
 	defer resp.Body.Close()
 
-	// Decode the JSON response
 	var metadata struct {
 		TaskARN    string `json:"TaskARN"`
 		Containers []struct {
 			Networks []struct {
-				IPv4Addresses  []string `json:"IPv4Addresses"`
-				PublicIPv4Addr string   `json:"PublicIPv4Address"`
+				NetworkMode       string   `json:"NetworkMode"`
+				IPv4Addresses     []string `json:"IPv4Addresses"`
+				PublicIPv4Address string   `json:"PublicIPv4Address"` // This field contains the public IP
 			} `json:"Networks"`
 		} `json:"Containers"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
 		log.Printf("Error decoding Fargate metadata JSON: %v", err)
-		return "task-id", "local-ip" // fallback for local testing
+		return "task-id", "local-ip"
 	}
 
 	// Extract the Task ID from the Task ARN
 	taskID := "task-id"
 	arnParts := strings.Split(metadata.TaskARN, "/")
 	if len(arnParts) > 1 {
-		taskID = arnParts[len(arnParts)-1] // Task ID is the last part of the ARN
+		taskID = arnParts[len(arnParts)-1]
 	}
 
-	// Extract the public IP address
-	publicIP := "local-ip"
-	if len(metadata.Containers) > 0 && len(metadata.Containers[0].Networks) > 0 {
-		publicIP = metadata.Containers[0].Networks[0].PublicIPv4Addr
+	// Get the public IP from the container metadata
+	// Check each container until we find the public IP
+	for _, container := range metadata.Containers {
+		if len(container.Networks) > 0 {
+			publicIP := container.Networks[0].PublicIPv4Address
+			if publicIP != "" {
+				return taskID, publicIP
+			}
+		}
 	}
 
-	return taskID, publicIP
+	// If no public IP is found, return the private IP as fallback
+	if len(metadata.Containers) > 0 &&
+		len(metadata.Containers[0].Networks) > 0 &&
+		len(metadata.Containers[0].Networks[0].IPv4Addresses) > 0 {
+		return taskID, metadata.Containers[0].Networks[0].IPv4Addresses[0]
+	}
+
+	return taskID, "local-ip"
 }
 
 const (
@@ -533,7 +511,6 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 		}, res.err
 	}
 	countMutex.Lock()
-
 	activeSessionCount++
 	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
 	countMutex.Unlock()
@@ -543,9 +520,6 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// fmt.Printf(timestamp, " | %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
 	s.log(logger.Info, "| %s | STARTED | %s", formattedSessionCount, s.path.Name())
-
-	// Log publisher start
-	// fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
 
 	// Log to DynamoDB for publishers
 
@@ -573,6 +547,9 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 			"time_connected": &types.AttributeValueMemberS{
 				Value: timestamp,
 			},
+			"record_fargate_metadata": &types.AttributeValueMemberM{
+				Value: recordFargateMetadata,
+			},
 		},
 	}
 
@@ -588,13 +565,6 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	s.stateMutex.Lock()
 	s.state = gortsplib.ServerSessionStateRecord
 	s.stateMutex.Unlock()
-	// countMutex.Lock()
-	// activeSessionCount++
-	// formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
-	// countMutex.Unlock()
-
-	// fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
-
 	s.log(logger.Debug, "rtsp_session.go> onRecord: End-99")
 
 	return &base.Response{
@@ -709,4 +679,77 @@ func (s *rtspSession) onPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
 // onDecodeError is called by rtspServer.
 func (s *rtspSession) onDecodeError(ctx *gortsplib.ServerHandlerOnDecodeErrorCtx) {
 	s.log(logger.Warn, "%v", ctx.Error)
+}
+
+func getFargateMetadataMap() map[string]types.AttributeValue {
+	metadataUri := os.Getenv("ECS_CONTAINER_METADATA_URI_V4")
+	if metadataUri == "" {
+		metadataUri = "http://169.254.170.2/v4"
+	}
+
+	taskEndpoint := metadataUri + "/task"
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", taskEndpoint, nil)
+	if err != nil {
+		log.Printf("Error creating request for Fargate metadata: %v", err)
+		return nil
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("Error retrieving Fargate metadata: %v", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	// Parse the metadata JSON response into a generic map
+	var metadata map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+		log.Printf("Error decoding Fargate metadata JSON: %v", err)
+		return nil
+	}
+
+	// Convert JSON map to DynamoDB map structure
+	dynamoMap := convertToDynamoDBMap(metadata)
+	return dynamoMap
+}
+
+// Helper function to recursively convert JSON map to DynamoDB map
+func convertToDynamoDBMap(data map[string]interface{}) map[string]types.AttributeValue {
+	dynamoMap := make(map[string]types.AttributeValue)
+	for key, value := range data {
+		switch v := value.(type) {
+		case string:
+			dynamoMap[key] = &types.AttributeValueMemberS{Value: v}
+		case bool:
+			dynamoMap[key] = &types.AttributeValueMemberBOOL{Value: v}
+		case float64: // AWS DynamoDB uses string or integer, float handling may vary
+			dynamoMap[key] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v)}
+		case map[string]interface{}:
+			dynamoMap[key] = &types.AttributeValueMemberM{Value: convertToDynamoDBMap(v)}
+		case []interface{}:
+			dynamoMap[key] = &types.AttributeValueMemberL{Value: convertToDynamoDBList(v)}
+		}
+	}
+	return dynamoMap
+}
+
+// Helper function to convert a list to DynamoDB list format
+func convertToDynamoDBList(data []interface{}) []types.AttributeValue {
+	var dynamoList []types.AttributeValue
+	for _, item := range data {
+		switch v := item.(type) {
+		case string:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberS{Value: v})
+		case bool:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberBOOL{Value: v})
+		case float64:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v)})
+		case map[string]interface{}:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberM{Value: convertToDynamoDBMap(v)})
+		}
+	}
+	return dynamoList
 }
