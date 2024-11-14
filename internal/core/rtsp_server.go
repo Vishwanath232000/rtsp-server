@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -550,80 +549,65 @@ func init() {
 
 // Fetch EC2 instance metadata
 // Function to fetch EC2 instance metadata with IMDSv2 token
-const EC2APIURL = "http://169.254.169.254/latest/meta-data/"
-const EC2MetadataTokenURI = "http://169.254.169.254/latest/api/token"
-const EC2MetadataTokenTTL = "21600"
+// const EC2APIURL = "http://169.254.169.254/latest/meta-data/"
+// const EC2MetadataTokenURI = "http://169.254.169.254/latest/api/token"
+// const EC2MetadataTokenTTL = "21600"
 
-func getMetadataToken() (string, error) {
-	req, err := http.NewRequest("PUT", EC2MetadataTokenURI, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %v", err)
-	}
-	req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
+// func getMetadataToken() (string, error) {
+// 	req, err := http.NewRequest("PUT", EC2MetadataTokenURI, nil)
+// 	if err != nil {
+// 		return "", fmt.Errorf("failed to create request: %v", err)
+// 	}
+// 	req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to request token: %v", err)
-	}
-	defer resp.Body.Close()
+// 	resp, err := http.DefaultClient.Do(req)
+// 	if err != nil {
+// 		return "", fmt.Errorf("failed to request token: %v", err)
+// 	}
+// 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to retrieve token: %v", resp.Status)
-	}
+// 	if resp.StatusCode != http.StatusOK {
+// 		return "", fmt.Errorf("failed to retrieve token: %v", resp.Status)
+// 	}
 
-	token, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read token response: %v", err)
-	}
+// 	token, err := io.ReadAll(resp.Body)
+// 	if err != nil {
+// 		return "", fmt.Errorf("failed to read token response: %v", err)
+// 	}
 
-	return string(token), nil
-}
+// 	return string(token), nil
+// }
 
-func getMetadataUsingToken(token string) (map[string]string, error) {
+func getMetadataUsingToken() (map[string]string, error) {
 	metadata := make(map[string]string)
 
-	// Use the root metadata URL to get all required fields in JSON format
-	fullURL := "http://169.254.169.254/latest/meta-data"
-	req, err := http.NewRequest("GET", fullURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create metadata request: %v", err)
-	}
-	req.Header.Set("X-aws-ec2-metadata-token", token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch metadata: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
+	// Define all metadata URIs that you need to fetch
+	urls := []string{
+		"instance-id",
+		"placement/availability-zone",
+		"public-ipv4",
+		"local-ipv4",
 	}
 
-	// Read the response body
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read metadata response: %v", err)
-	}
+	// Loop through each URL and fetch the metadata
+	for _, url := range urls {
+		fullURL := "http://169.254.169.254/latest/meta-data/" + url
+		resp, err := http.Get(fullURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch metadata from %s: %v", fullURL, err)
+		}
+		defer resp.Body.Close()
 
-	// Convert the JSON response to a map
-	metadataMap := map[string]interface{}{}
-	if err := json.Unmarshal(data, &metadataMap); err != nil {
-		return nil, fmt.Errorf("failed to parse metadata JSON: %v", err)
-	}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
+		}
 
-	// Extract required fields and add to metadata map
-	if instanceID, ok := metadataMap["instance-id"].(string); ok {
-		metadata["instance-id"] = instanceID
-	}
-	if availabilityZone, ok := metadataMap["placement/availability-zone"].(string); ok {
-		metadata["placement/availability-zone"] = availabilityZone
-	}
-	if publicIPv4, ok := metadataMap["public-ipv4"].(string); ok {
-		metadata["public-ipv4"] = publicIPv4
-	}
-	if localIPv4, ok := metadataMap["local-ipv4"].(string); ok {
-		metadata["local-ipv4"] = localIPv4
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read metadata response body: %v", err)
+		}
+
+		metadata[url] = string(data)
 	}
 
 	return metadata, nil
@@ -631,13 +615,13 @@ func getMetadataUsingToken(token string) (map[string]string, error) {
 
 func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails := InstanceDetails{}
-	token, err := getMetadataToken()
-	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get metadata token: %v", err)
-	}
+	// token, err := getMetadataToken()
+	// if err != nil {
+	// 	return instanceDetails, fmt.Errorf("failed to get metadata token: %v", err)
+	// }
 
 	// Get all metadata using the token
-	metadata, err := getMetadataUsingToken(token)
+	metadata, err := getMetadataUsingToken()
 	if err != nil {
 		return instanceDetails, fmt.Errorf("failed to get instance metadata: %v", err)
 	}
@@ -650,7 +634,6 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails.HostType = metadata["instance-type"]
 	server_instance_id = metadata["instance-id"]
 	instanceDetails.OS = server_operating_system
-
 	return instanceDetails, nil
 }
 
