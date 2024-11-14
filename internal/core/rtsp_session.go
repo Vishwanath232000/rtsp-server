@@ -576,7 +576,7 @@ func update_EC2_Stream_info_DynamoDB(stream_id string, session_id string, stream
 				Value: server_instance_id,
 			},
 			"rtsp_server_ip": &types.AttributeValueMemberS{
-				Value: server_environment,
+				Value: server_public_ip,
 			},
 			"session_id": &types.AttributeValueMemberS{
 				Value: session_id,
