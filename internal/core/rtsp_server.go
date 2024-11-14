@@ -579,69 +579,14 @@ func getMetadataToken() (string, error) {
 	return string(token), nil
 }
 
-// Function to get the IMDSv2 token
+func getMetadataUsingToken(token string) (map[string]string, error) {
+	metadata := make(map[string]string)
 
-// func getMetadataUsingToken(token string) (map[string]string, error) {
-// 	// Construct the full metadata URL
-// 	metadataURL := "http://169.254.169.254/latest/meta-data/"
-
-// 	// Make the HTTP GET request to fetch the metadata
-// 	resp, err := http.Get(metadataURL)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to fetch metadata: %v", err)
-// 	}
-// 	defer resp.Body.Close()
-
-// 	// Read the response body
-// 	data, err := io.ReadAll(resp.Body)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to read metadata response body: %v", err)
-// 	}
-
-// 	// Parse the JSON response into a map
-// 	metadata := make(map[string]string)
-// 	err = json.Unmarshal(data, &metadata)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to parse metadata JSON: %v", err)
-// 	}
-
-// 	return metadata, nil
-// }
-
-// func getInstanceMetadata() (InstanceDetails, error) {
-// 	instanceDetails := InstanceDetails{}
-// 	token, err := getMetadataToken()
-// 	if err != nil {
-// 		return instanceDetails, fmt.Errorf("failed to get metadata token: %v", err)
-// 	}
-
-// 	// Get all metadata using the token
-// 	metadata, err := getMetadataUsingToken(token)
-// 	if err != nil {
-// 		return instanceDetails, fmt.Errorf("failed to get instance metadata: %v", err)
-// 	}
-
-// 	// Populate the InstanceDetails struct with metadata
-// 	instanceDetails.InstanceID = metadata["instance-id"]
-// 	instanceDetails.Region = metadata["placement/availability-zone"]
-// 	instanceDetails.PublicIP = metadata["public-ipv4"]
-// 	instanceDetails.PrivateIP = metadata["local-ipv4"]
-// 	instanceDetails.HostType = metadata["instance-type"]
-// 	instanceDetails.OS = server_operating_system
-// 	server_instance_id = metadata["instance-id"]
-// 	// Optionally, you can modify the region to remove the availability zone suffix, if needed
-// 	instanceDetails.Region = strings.TrimSuffix(instanceDetails.Region, "a")
-
-//		return instanceDetails, nil
-//	}
-func getMetadataUsingToken(token string) (map[string]interface{}, error) {
-	// Construct the full metadata URL
-	metadataURL := "http://169.254.169.254/latest/dynamic/instance-identity/document"
-
-	// Make the HTTP GET request to fetch the metadata
-	req, err := http.NewRequest("GET", metadataURL, nil)
+	// Use the root metadata URL to get all required fields in JSON format
+	fullURL := "http://169.254.169.254/latest/meta-data"
+	req, err := http.NewRequest("GET", fullURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %v", err)
+		return nil, fmt.Errorf("failed to create metadata request: %v", err)
 	}
 	req.Header.Set("X-aws-ec2-metadata-token", token)
 
@@ -651,17 +596,34 @@ func getMetadataUsingToken(token string) (map[string]interface{}, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
+	}
+
 	// Read the response body
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read metadata response body: %v", err)
+		return nil, fmt.Errorf("failed to read metadata response: %v", err)
 	}
 
-	// Parse the JSON response into a map
-	var metadata map[string]interface{}
-	err = json.Unmarshal(data, &metadata)
-	if err != nil {
+	// Convert the JSON response to a map
+	metadataMap := map[string]interface{}{}
+	if err := json.Unmarshal(data, &metadataMap); err != nil {
 		return nil, fmt.Errorf("failed to parse metadata JSON: %v", err)
+	}
+
+	// Extract required fields and add to metadata map
+	if instanceID, ok := metadataMap["instance-id"].(string); ok {
+		metadata["instance-id"] = instanceID
+	}
+	if availabilityZone, ok := metadataMap["placement/availability-zone"].(string); ok {
+		metadata["placement/availability-zone"] = availabilityZone
+	}
+	if publicIPv4, ok := metadataMap["public-ipv4"].(string); ok {
+		metadata["public-ipv4"] = publicIPv4
+	}
+	if localIPv4, ok := metadataMap["local-ipv4"].(string); ok {
+		metadata["local-ipv4"] = localIPv4
 	}
 
 	return metadata, nil
@@ -681,11 +643,12 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	}
 
 	// Populate the InstanceDetails struct with metadata
-	instanceDetails.InstanceID = metadata["instanceId"].(string)
-	instanceDetails.Region = strings.Split(metadata["region"].(string), "-")[0]
-	instanceDetails.PublicIP = metadata["publicIpv4"].(string)
-	instanceDetails.PrivateIP = metadata["privateIpv4"].(string)
-	instanceDetails.HostType = metadata["instanceType"].(string)
+	instanceDetails.InstanceID = metadata["instance-id"]
+	instanceDetails.Region = metadata["placement/availability-zone"]
+	instanceDetails.PublicIP = metadata["public-ipv4"]
+	instanceDetails.PrivateIP = metadata["local-ipv4"]
+	instanceDetails.HostType = metadata["instance-type"]
+	server_instance_id = metadata["instance-id"]
 	instanceDetails.OS = server_operating_system
 
 	return instanceDetails, nil
