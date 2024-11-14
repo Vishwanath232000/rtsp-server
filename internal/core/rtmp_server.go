@@ -362,44 +362,18 @@ func init() {
 
 // Fetch EC2 instance metadata
 // Function to fetch EC2 instance metadata with IMDSv2 token
-func getInstanceMetadata() (InstanceDetails, error) {
-	instanceDetails := InstanceDetails{}
+const EC2APIURL = "http://169.254.169.254/latest"
+const EC2MetadataTokenURI = EC2APIURL + "/api/token"
+const EC2MetadataURI = EC2APIURL + "/meta-data/"
 
-	// Step 1: Get the IMDSv2 token
-	token, err := getMetadataToken()
-	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get IMDSv2 token: %v", err)
-	}
-
-	// Step 2: Use the token to fetch metadata
-	metadata, err := getMetadataWithToken("http://169.254.169.254/latest/meta-data/", token)
-	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get instance metadata: %v", err)
-	}
-
-	// Step 3: Extract required metadata fields
-	instanceDetails.InstanceID = metadata["instance-id"]
-	instanceDetails.Region = metadata["placement/availability-zone"]
-	instanceDetails.PublicIP = metadata["public-ipv4"]
-	instanceDetails.PrivateIP = metadata["local-ipv4"]
-	instanceDetails.HostType = "EC2"
-	instanceDetails.OS = "Linux (assumed)"
-	instanceDetails.TimeStarted = time.Now().Format("15:04:05")
-	instanceDetails.Region = strings.TrimSuffix(instanceDetails.Region, "a")
-	server_instance_id = metadata["instance-id"]
-
-	return instanceDetails, nil
-}
-
-// Helper function to get the IMDSv2 token
-// Helper function to get the IMDSv2 token
+// Function to get the IMDSv2 token
 func getMetadataToken() (string, error) {
-	req, err := http.NewRequest("PUT", "http://169.254.169.254/latest/api/token", nil)
+	req, err := http.NewRequest("PUT", EC2MetadataTokenURI, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %v", err)
 	}
+	req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
 
-	// Send the request using the default client
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to request token: %v", err)
@@ -410,7 +384,6 @@ func getMetadataToken() (string, error) {
 		return "", fmt.Errorf("failed to retrieve token: %v", resp.Status)
 	}
 
-	// Read the token from the response body
 	token, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read token response: %v", err)
@@ -419,41 +392,71 @@ func getMetadataToken() (string, error) {
 	return string(token), nil
 }
 
-// Helper function to fetch metadata with IMDSv2 token
-func getMetadataWithToken(baseURL, token string) (map[string]string, error) {
-	metadata := make(map[string]string)
-	urls := []string{"instance-id", "placement/availability-zone", "public-ipv4", "local-ipv4"}
+// Function to get metadata using IMDSv2 token
+func getMetadataUsingToken(url, token string) (string, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("X-aws-ec2-metadata-token", token)
 
-	// For each metadata URL, fetch the data using the token
-	for _, url := range urls {
-		fullURL := baseURL + url
-		req, err := http.NewRequest("GET", fullURL, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %v", err)
-		}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch metadata from %s: %v", url, err)
+	}
+	defer resp.Body.Close()
 
-		// Add the IMDSv2 token to the request headers
-		req.Header.Add("X-aws-ec2-metadata-token", token)
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch metadata from %s: %v", fullURL, err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
-		}
-
-		data, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read metadata response body: %v", err)
-		}
-
-		metadata[url] = string(data)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to retrieve metadata: %v", resp.Status)
 	}
 
-	return metadata, nil
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read metadata response body: %v", err)
+	}
+
+	return string(data), nil
+}
+
+// Function to get instance metadata (instance ID, region, etc.)
+func getInstanceMetadata() (InstanceDetails, error) {
+	instanceDetails := InstanceDetails{}
+
+	token, err := getMetadataToken()
+	if err != nil {
+		return instanceDetails, fmt.Errorf("failed to get metadata token: %v", err)
+	}
+
+	instanceID, err := getMetadataUsingToken(EC2MetadataURI+"instance-id", token)
+	if err != nil {
+		return instanceDetails, fmt.Errorf("failed to get instance ID: %v", err)
+	}
+
+	availabilityZone, err := getMetadataUsingToken(EC2MetadataURI+"placement/availability-zone", token)
+	if err != nil {
+		return instanceDetails, fmt.Errorf("failed to get availability zone: %v", err)
+	}
+
+	publicIP, err := getMetadataUsingToken(EC2MetadataURI+"public-ipv4", token)
+	if err != nil {
+		return instanceDetails, fmt.Errorf("failed to get public IP: %v", err)
+	}
+
+	privateIP, err := getMetadataUsingToken(EC2MetadataURI+"local-ipv4", token)
+	if err != nil {
+		return instanceDetails, fmt.Errorf("failed to get private IP: %v", err)
+	}
+
+	instanceDetails.InstanceID = instanceID
+	instanceDetails.Region = strings.TrimSuffix(availabilityZone, "a")
+	instanceDetails.PublicIP = publicIP
+	instanceDetails.PrivateIP = privateIP
+	instanceDetails.HostType = "EC2"
+	instanceDetails.OS = "Linux (assumed)"
+	instanceDetails.TimeStarted = time.Now().Format("15:04:05")
+	server_instance_id = instanceID
+
+	return instanceDetails, nil
 }
 
 // Function to update DynamoDB asynchronously
