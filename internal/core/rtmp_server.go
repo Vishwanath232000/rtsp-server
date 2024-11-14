@@ -356,7 +356,7 @@ func init() {
 		}
 
 		// Start the background update to DynamoDB
-		log.Println("Starting background DynamoDB update")
+		log.Println(instanceDetails)
 		updateDynamoDB(instanceDetails)
 	}()
 }
