@@ -392,8 +392,15 @@ func getInstanceMetadata() (InstanceDetails, error) {
 }
 
 // Helper function to get the IMDSv2 token
+// Helper function to get the IMDSv2 token
 func getMetadataToken() (string, error) {
-	resp, err := http.Put("http://169.254.169.254/latest/api/token", nil)
+	req, err := http.NewRequest("PUT", "http://169.254.169.254/latest/api/token", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Send the request using the default client
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to request token: %v", err)
 	}
