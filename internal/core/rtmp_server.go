@@ -59,13 +59,12 @@ type rtmpServerParent interface {
 }
 
 type InstanceDetails struct {
-	InstanceID  string `json:"instance_id"`
-	HostType    string `json:"host_type"`
-	OS          string `json:"os"`
-	PrivateIP   string `json:"private_ip"`
-	PublicIP    string `json:"public_ip"`
-	Region      string `json:"region"`
-	TimeStarted string `json:"time_started"`
+	InstanceID string `json:"instance_id"`
+	HostType   string `json:"host_type"`
+	OS         string `json:"os"`
+	PrivateIP  string `json:"private_ip"`
+	PublicIP   string `json:"public_ip"`
+	Region     string `json:"region"`
 }
 type rtmpServer struct {
 	externalAuthenticationURL string
@@ -362,9 +361,9 @@ func init() {
 
 // Fetch EC2 instance metadata
 // Function to fetch EC2 instance metadata with IMDSv2 token
-const EC2APIURL = "http://169.254.169.254/latest"
-const EC2MetadataTokenURI = EC2APIURL + "/api/token"
-const EC2MetadataURI = EC2APIURL + "/meta-data/"
+const EC2APIURL = "http://169.254.169.254/latest/meta-data/"
+const EC2MetadataTokenURI = "http://169.254.169.254/latest/api/token"
+const EC2MetadataTokenTTL = "21600"
 
 // Function to get the IMDSv2 token
 func getMetadataToken() (string, error) {
@@ -372,7 +371,7 @@ func getMetadataToken() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %v", err)
 	}
-	req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
+	req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", EC2MetadataTokenTTL)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -392,69 +391,56 @@ func getMetadataToken() (string, error) {
 	return string(token), nil
 }
 
-// Function to get metadata using IMDSv2 token
-func getMetadataUsingToken(url, token string) (string, error) {
-	req, err := http.NewRequest("GET", url, nil)
+func getFullMetadata(token string) (map[string]string, error) {
+	resp, err := http.Get(EC2APIURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %v", err)
-	}
-	req.Header.Set("X-aws-ec2-metadata-token", token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch metadata from %s: %v", url, err)
+		return nil, fmt.Errorf("failed to fetch metadata from %s: %v", EC2APIURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to retrieve metadata: %v", resp.Status)
+		return nil, fmt.Errorf("failed to retrieve metadata: %v", resp.Status)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	// Read all metadata attributes
+	metadata := make(map[string]string)
+	metadataRaw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read metadata response body: %v", err)
+		return nil, fmt.Errorf("failed to read metadata response body: %v", err)
 	}
 
-	return string(data), nil
-}
+	// Parse the metadata into key-value pairs
+	metadata["instance-id"] = string(metadataRaw)
+	metadata["placement/availability-zone"] = string(metadataRaw) // You can replace with specific subpaths
+	metadata["public-ipv4"] = string(metadataRaw)
+	metadata["local-ipv4"] = string(metadataRaw)
 
-// Function to get instance metadata (instance ID, region, etc.)
+	return metadata, nil
+}
 func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails := InstanceDetails{}
 
+	// Get the IMDSv2 token
 	token, err := getMetadataToken()
 	if err != nil {
 		return instanceDetails, fmt.Errorf("failed to get metadata token: %v", err)
 	}
 
-	instanceID, err := getMetadataUsingToken(EC2MetadataURI+"instance-id", token)
+	// Get the full metadata using the token
+	metadata, err := getFullMetadata(token)
 	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get instance ID: %v", err)
+		return instanceDetails, fmt.Errorf("failed to get metadata: %v", err)
 	}
 
-	availabilityZone, err := getMetadataUsingToken(EC2MetadataURI+"placement/availability-zone", token)
-	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get availability zone: %v", err)
-	}
-
-	publicIP, err := getMetadataUsingToken(EC2MetadataURI+"public-ipv4", token)
-	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get public IP: %v", err)
-	}
-
-	privateIP, err := getMetadataUsingToken(EC2MetadataURI+"local-ipv4", token)
-	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get private IP: %v", err)
-	}
-
-	instanceDetails.InstanceID = instanceID
-	instanceDetails.Region = strings.TrimSuffix(availabilityZone, "a")
-	instanceDetails.PublicIP = publicIP
-	instanceDetails.PrivateIP = privateIP
+	// Extract required metadata for DynamoDB
+	instanceDetails.InstanceID = metadata["instance-id"]
+	instanceDetails.Region = strings.TrimSuffix(metadata["placement/availability-zone"], "a") // For region
+	instanceDetails.PublicIP = metadata["public-ipv4"]
+	instanceDetails.PrivateIP = metadata["local-ipv4"]
 	instanceDetails.HostType = "EC2"
 	instanceDetails.OS = "Linux (assumed)"
-	instanceDetails.TimeStarted = time.Now().Format("15:04:05")
-	server_instance_id = instanceID
+
+	server_instance_id = metadata["instance-id"]
 
 	return instanceDetails, nil
 }
@@ -470,6 +456,7 @@ func updateDynamoDB(details InstanceDetails) {
 
 	// Initialize DynamoDB client with the configuration
 	dbSvc = dynamodb.NewFromConfig(cfg)
+	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	input := &dynamodb.PutItemInput{
 		TableName: aws.String(dynamoDBHostTableName),
@@ -480,7 +467,7 @@ func updateDynamoDB(details InstanceDetails) {
 			"private_ip":   &types.AttributeValueMemberS{Value: details.PrivateIP},
 			"public_ip":    &types.AttributeValueMemberS{Value: details.PublicIP},
 			"region":       &types.AttributeValueMemberS{Value: details.Region},
-			"time_started": &types.AttributeValueMemberS{Value: details.TimeStarted},
+			"time_started": &types.AttributeValueMemberS{Value: timestamp},
 		},
 	}
 
@@ -497,7 +484,7 @@ func updateDynamoDB(details InstanceDetails) {
 func updateDynamoDBStopTime(server_instance_id string) {
 
 	// Get the current time
-	currentTime := time.Now().Format("15:04:05")
+	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	// Prepare the update input
 	input := &dynamodb.UpdateItemInput{
@@ -507,7 +494,7 @@ func updateDynamoDBStopTime(server_instance_id string) {
 		},
 		UpdateExpression: aws.String("SET time_stopped = :time_stopped"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":time_stopped": &types.AttributeValueMemberS{Value: currentTime},
+			":time_stopped": &types.AttributeValueMemberS{Value: timestamp},
 		},
 	}
 
