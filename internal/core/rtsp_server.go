@@ -626,6 +626,7 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails.PrivateIP = metadata["local-ipv4"]
 	server_instance_id = metadata["instance-id"]
 	instanceDetails.HostType = "EC2"
+	server_environment = "EC2"
 	instanceDetails.OS = server_operating_system
 	server_public_ip = metadata["public-ipv4"]
 	return instanceDetails, nil
@@ -708,6 +709,7 @@ func getFargateMetadata() (InstanceDetails, error) {
 	// Set HostType and OS for DynamoDB (these may be known/static values)
 	server_instance_id = taskID
 	instanceDetails.HostType = "Fargate"
+	server_environment = "Fargate"
 	instanceDetails.OS = server_operating_system
 	server_public_ip = instanceDetails.PublicIP
 	return instanceDetails, nil
