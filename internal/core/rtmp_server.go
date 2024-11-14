@@ -382,13 +382,52 @@ func getInstanceMetadata() (InstanceDetails, error) {
 }
 
 // Helper function to fetch metadata from EC2 metadata service
+// func getMetadata(baseURL string) (map[string]string, error) {
+// 	metadata := make(map[string]string)
+// 	urls := []string{"instance-id", "placement/availability-zone", "public-ipv4", "local-ipv4"}
+
+// 	for _, url := range urls {
+// 		fullURL := baseURL + url
+// 		resp, err := http.Get(fullURL)
+// 		if err != nil {
+// 			return nil, fmt.Errorf("failed to fetch metadata from %s: %v", fullURL, err)
+// 		}
+// 		defer resp.Body.Close()
+
+// 		if resp.StatusCode != http.StatusOK {
+// 			return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
+// 		}
+
+// 		data, err := io.ReadAll(resp.Body)
+// 		if err != nil {
+// 			return nil, fmt.Errorf("failed to read metadata response body: %v", err)
+// 		}
+
+//			metadata[url] = string(data)
+//		}
+//		return metadata, nil
+//	}
+//
+// Helper function to fetch metadata from EC2 metadata service with IMDSv2 support
 func getMetadata(baseURL string) (map[string]string, error) {
 	metadata := make(map[string]string)
+	token, err := getIMDSToken(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get IMDSv2 token: %v", err)
+	}
+
 	urls := []string{"instance-id", "placement/availability-zone", "public-ipv4", "local-ipv4"}
 
 	for _, url := range urls {
 		fullURL := baseURL + url
-		resp, err := http.Get(fullURL)
+		req, err := http.NewRequest("GET", fullURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %v", err)
+		}
+
+		// Add the token to the header for IMDSv2
+		req.Header.Add("X-aws-ec2-metadata-token", token)
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch metadata from %s: %v", fullURL, err)
 		}
@@ -406,6 +445,33 @@ func getMetadata(baseURL string) (map[string]string, error) {
 		metadata[url] = string(data)
 	}
 	return metadata, nil
+}
+
+// Helper function to get IMDSv2 token
+func getIMDSToken(baseURL string) (string, error) {
+	tokenURL := baseURL + "api/token"
+	req, err := http.NewRequest("PUT", tokenURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create token request: %v", err)
+	}
+
+	// Required header for IMDSv2 token retrieval
+	req.Header.Add("X-aws-ec2-metadata-token-ttl-seconds", "21600") // 6 hours
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch token: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to fetch token: %v", resp.Status)
+	}
+
+	token, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read token response body: %v", err)
+	}
+	return string(token), nil
 }
 
 // Function to update DynamoDB asynchronously
