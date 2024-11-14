@@ -581,12 +581,71 @@ func getMetadataToken() (string, error) {
 
 // Function to get the IMDSv2 token
 
-func getMetadataUsingToken(token string) (map[string]string, error) {
+// func getMetadataUsingToken(token string) (map[string]string, error) {
+// 	// Construct the full metadata URL
+// 	metadataURL := "http://169.254.169.254/latest/meta-data/"
+
+// 	// Make the HTTP GET request to fetch the metadata
+// 	resp, err := http.Get(metadataURL)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to fetch metadata: %v", err)
+// 	}
+// 	defer resp.Body.Close()
+
+// 	// Read the response body
+// 	data, err := io.ReadAll(resp.Body)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to read metadata response body: %v", err)
+// 	}
+
+// 	// Parse the JSON response into a map
+// 	metadata := make(map[string]string)
+// 	err = json.Unmarshal(data, &metadata)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to parse metadata JSON: %v", err)
+// 	}
+
+// 	return metadata, nil
+// }
+
+// func getInstanceMetadata() (InstanceDetails, error) {
+// 	instanceDetails := InstanceDetails{}
+// 	token, err := getMetadataToken()
+// 	if err != nil {
+// 		return instanceDetails, fmt.Errorf("failed to get metadata token: %v", err)
+// 	}
+
+// 	// Get all metadata using the token
+// 	metadata, err := getMetadataUsingToken(token)
+// 	if err != nil {
+// 		return instanceDetails, fmt.Errorf("failed to get instance metadata: %v", err)
+// 	}
+
+// 	// Populate the InstanceDetails struct with metadata
+// 	instanceDetails.InstanceID = metadata["instance-id"]
+// 	instanceDetails.Region = metadata["placement/availability-zone"]
+// 	instanceDetails.PublicIP = metadata["public-ipv4"]
+// 	instanceDetails.PrivateIP = metadata["local-ipv4"]
+// 	instanceDetails.HostType = metadata["instance-type"]
+// 	instanceDetails.OS = server_operating_system
+// 	server_instance_id = metadata["instance-id"]
+// 	// Optionally, you can modify the region to remove the availability zone suffix, if needed
+// 	instanceDetails.Region = strings.TrimSuffix(instanceDetails.Region, "a")
+
+//		return instanceDetails, nil
+//	}
+func getMetadataUsingToken(token string) (map[string]interface{}, error) {
 	// Construct the full metadata URL
-	metadataURL := "http://169.254.169.254/latest/meta-data/"
+	metadataURL := "http://169.254.169.254/latest/dynamic/instance-identity/document"
 
 	// Make the HTTP GET request to fetch the metadata
-	resp, err := http.Get(metadataURL)
+	req, err := http.NewRequest("GET", metadataURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("X-aws-ec2-metadata-token", token)
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch metadata: %v", err)
 	}
@@ -599,7 +658,7 @@ func getMetadataUsingToken(token string) (map[string]string, error) {
 	}
 
 	// Parse the JSON response into a map
-	metadata := make(map[string]string)
+	var metadata map[string]interface{}
 	err = json.Unmarshal(data, &metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse metadata JSON: %v", err)
@@ -622,15 +681,12 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	}
 
 	// Populate the InstanceDetails struct with metadata
-	instanceDetails.InstanceID = metadata["instance-id"]
-	instanceDetails.Region = metadata["placement/availability-zone"]
-	instanceDetails.PublicIP = metadata["public-ipv4"]
-	instanceDetails.PrivateIP = metadata["local-ipv4"]
-	instanceDetails.HostType = metadata["instance-type"]
+	instanceDetails.InstanceID = metadata["instanceId"].(string)
+	instanceDetails.Region = strings.Split(metadata["region"].(string), "-")[0]
+	instanceDetails.PublicIP = metadata["publicIpv4"].(string)
+	instanceDetails.PrivateIP = metadata["privateIpv4"].(string)
+	instanceDetails.HostType = metadata["instanceType"].(string)
 	instanceDetails.OS = server_operating_system
-	server_instance_id = metadata["instance-id"]
-	// Optionally, you can modify the region to remove the availability zone suffix, if needed
-	instanceDetails.Region = strings.TrimSuffix(instanceDetails.Region, "a")
 
 	return instanceDetails, nil
 }
