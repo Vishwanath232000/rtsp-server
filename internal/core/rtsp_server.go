@@ -225,12 +225,12 @@ func (s *rtspServer) log(level logger.Level, format string, args ...interface{})
 }
 
 func (s *rtspServer) close() {
+	updateDynamoDBStopTime(server_instance_id)
 	s.log(logger.Debug, "rtsp_server.go> close: Begin")
 	s.log(logger.Info, "listener is closing")
 	s.ctxCancel()
 	s.wg.Wait()
 	s.log(logger.Debug, "rtsp_server.go> close: End-99")
-	updateDynamoDBStopTime(server_instance_id)
 
 }
 
@@ -632,8 +632,8 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails.Region = metadata["placement/availability-zone"]
 	instanceDetails.PublicIP = metadata["public-ipv4"]
 	instanceDetails.PrivateIP = metadata["local-ipv4"]
-	instanceDetails.HostType = metadata["instance-type"] // Hardcoded for simplicity, could be dynamic
-	instanceDetails.OS = server_operating_system         // Hardcoded as example
+	instanceDetails.HostType = metadata["instance-type"]
+	instanceDetails.OS = server_operating_system
 	server_instance_id = metadata["instance-id"]
 	// Optionally, you can modify the region to remove the availability zone suffix, if needed
 	instanceDetails.Region = strings.TrimSuffix(instanceDetails.Region, "a")
