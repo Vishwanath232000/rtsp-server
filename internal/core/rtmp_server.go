@@ -16,6 +16,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -337,6 +338,7 @@ func (s *rtmpServer) apiConnsKick(id string) rtmpServerAPIConnsKickRes {
 
 var dynamoDBHostTableName string
 var server_instance_id string
+var server_operating_system = runtime.GOOS
 
 // init is called automatically when the package is loaded
 func init() {
@@ -444,8 +446,8 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails.Region = metadata["placement/availability-zone"]
 	instanceDetails.PublicIP = metadata["public-ipv4"]
 	instanceDetails.PrivateIP = metadata["local-ipv4"]
-	instanceDetails.HostType = "EC2"       // Hardcoded for simplicity, could be dynamic
-	instanceDetails.OS = "Linux (assumed)" // Hardcoded as example
+	instanceDetails.HostType = metadata["instance-type"] // Hardcoded for simplicity, could be dynamic
+	instanceDetails.OS = server_operating_system         // Hardcoded as example
 	server_instance_id = metadata["instance-id"]
 	// Optionally, you can modify the region to remove the availability zone suffix, if needed
 	instanceDetails.Region = strings.TrimSuffix(instanceDetails.Region, "a")
