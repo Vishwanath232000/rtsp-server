@@ -366,81 +366,60 @@ const EC2MetadataTokenURI = "http://169.254.169.254/latest/api/token"
 const EC2MetadataTokenTTL = "21600"
 
 // Function to get the IMDSv2 token
-func getMetadataToken() (string, error) {
-	req, err := http.NewRequest("PUT", EC2MetadataTokenURI, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %v", err)
-	}
-	req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", EC2MetadataTokenTTL)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to request token: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to retrieve token: %v", resp.Status)
-	}
-
-	token, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read token response: %v", err)
-	}
-
-	return string(token), nil
-}
-
-func getFullMetadata(token string) (map[string]string, error) {
-	resp, err := http.Get(EC2APIURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch metadata from %s: %v", EC2APIURL, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to retrieve metadata: %v", resp.Status)
-	}
-
-	// Read all metadata attributes
+func getMetadataUsingToken(token string) (map[string]string, error) {
 	metadata := make(map[string]string)
-	metadataRaw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read metadata response body: %v", err)
+
+	// Define all metadata URIs that you need to fetch
+	urls := []string{
+		"instance-id",
+		"placement/availability-zone",
+		"public-ipv4",
+		"local-ipv4",
 	}
 
-	// Parse the metadata into key-value pairs
-	metadata["instance-id"] = string(metadataRaw)
-	metadata["placement/availability-zone"] = string(metadataRaw) // You can replace with specific subpaths
-	metadata["public-ipv4"] = string(metadataRaw)
-	metadata["local-ipv4"] = string(metadataRaw)
+	// Loop through each URL and fetch the metadata
+	for _, url := range urls {
+		fullURL := "http://169.254.169.254/latest/meta-data/" + url
+		resp, err := http.Get(fullURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch metadata from %s: %v", fullURL, err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
+		}
+
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read metadata response body: %v", err)
+		}
+
+		metadata[url] = string(data)
+	}
 
 	return metadata, nil
 }
+
 func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails := InstanceDetails{}
 
-	// Get the IMDSv2 token
-	token, err := getMetadataToken()
+	// Get all metadata using the token
+	metadata, err := getMetadataUsingToken()
 	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get metadata token: %v", err)
+		return instanceDetails, fmt.Errorf("failed to get instance metadata: %v", err)
 	}
 
-	// Get the full metadata using the token
-	metadata, err := getFullMetadata(token)
-	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get metadata: %v", err)
-	}
-
-	// Extract required metadata for DynamoDB
+	// Populate the InstanceDetails struct with metadata
 	instanceDetails.InstanceID = metadata["instance-id"]
-	instanceDetails.Region = strings.TrimSuffix(metadata["placement/availability-zone"], "a") // For region
+	instanceDetails.Region = metadata["placement/availability-zone"]
 	instanceDetails.PublicIP = metadata["public-ipv4"]
 	instanceDetails.PrivateIP = metadata["local-ipv4"]
-	instanceDetails.HostType = "EC2"
-	instanceDetails.OS = "Linux (assumed)"
-
+	instanceDetails.HostType = "EC2"       // Hardcoded for simplicity, could be dynamic
+	instanceDetails.OS = "Linux (assumed)" // Hardcoded as example
 	server_instance_id = metadata["instance-id"]
+	// Optionally, you can modify the region to remove the availability zone suffix, if needed
+	instanceDetails.Region = strings.TrimSuffix(instanceDetails.Region, "a")
 
 	return instanceDetails, nil
 }
