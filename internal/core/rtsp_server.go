@@ -583,7 +583,7 @@ func getMetadataToken() (string, error) {
 
 func getMetadataUsingToken(token string) (map[string]string, error) {
 	// Construct the full metadata URL
-	metadataURL := "http://169.254.169.254/latest/dynamic/instance-identity/document"
+	metadataURL := "http://169.254.169.254/latest/meta-data/"
 
 	// Make the HTTP GET request to fetch the metadata
 	resp, err := http.Get(metadataURL)
