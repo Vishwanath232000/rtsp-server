@@ -11,6 +11,17 @@ import (
 	"github.com/bhaney/rtsp-simple-server/internal/conf"
 	"github.com/bhaney/rtsp-simple-server/internal/externalcmd"
 	"github.com/bhaney/rtsp-simple-server/internal/logger"
+
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 type rtmpServerAPIConnsListItem struct {
@@ -47,6 +58,15 @@ type rtmpServerParent interface {
 	Log(logger.Level, string, ...interface{})
 }
 
+type InstanceDetails struct {
+	InstanceID  string `json:"instance_id"`
+	HostType    string `json:"host_type"`
+	OS          string `json:"os"`
+	PrivateIP   string `json:"private_ip"`
+	PublicIP    string `json:"public_ip"`
+	Region      string `json:"region"`
+	TimeStarted string `json:"time_started"`
+}
 type rtmpServer struct {
 	externalAuthenticationURL string
 	readTimeout               conf.StringDuration
@@ -312,5 +332,137 @@ func (s *rtmpServer) apiConnsKick(id string) rtmpServerAPIConnsKickRes {
 
 	case <-s.ctx.Done():
 		return rtmpServerAPIConnsKickRes{err: fmt.Errorf("terminated")}
+	}
+}
+
+var dynamoDBHostTableName string
+
+// init is called automatically when the package is loaded
+func init() {
+	dynamoDBHostTableName = os.Getenv("DYNAMODB_HOST_INFO_TABLE_NAME")
+	if dynamoDBHostTableName == "" {
+		log.Fatal("DYNAMODB_TABLE_NAME environment variable is not set")
+		dynamoDBHostTableName = "sam-rtsp-server-hosts"
+	}
+	// Fetch EC2 instance metadata and start background DynamoDB update
+	go func() {
+		instanceDetails, err := getInstanceMetadata()
+		if err != nil {
+			log.Printf("Failed to get instance metadata: %v", err)
+			return
+		}
+
+		// Start the background update to DynamoDB
+		log.Println("Starting background DynamoDB update")
+		updateDynamoDB(instanceDetails)
+	}()
+}
+
+// Fetch EC2 instance metadata
+func getInstanceMetadata() (InstanceDetails, error) {
+	instanceDetails := InstanceDetails{}
+
+	// Fetch entire metadata in one go
+	metadata, err := getMetadata("http://169.254.169.254/latest/meta-data/")
+	if err != nil {
+		return instanceDetails, fmt.Errorf("failed to get instance metadata: %v", err)
+	}
+
+	// Extract required fields from metadata
+	instanceDetails.InstanceID = metadata["instance-id"]
+	instanceDetails.Region = metadata["placement/availability-zone"]
+	instanceDetails.PublicIP = metadata["public-ipv4"]
+	instanceDetails.PrivateIP = metadata["local-ipv4"]
+	instanceDetails.HostType = "EC2"
+	instanceDetails.OS = "Linux (assumed)"
+	instanceDetails.TimeStarted = time.Now().Format("15:04:05")
+	instanceDetails.Region = strings.TrimSuffix(instanceDetails.Region, "a")
+
+	return instanceDetails, nil
+}
+
+// Helper function to fetch metadata from EC2 metadata service
+func getMetadata(baseURL string) (map[string]string, error) {
+	metadata := make(map[string]string)
+	urls := []string{"instance-id", "placement/availability-zone", "public-ipv4", "local-ipv4"}
+
+	for _, url := range urls {
+		fullURL := baseURL + url
+		resp, err := http.Get(fullURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch metadata from %s: %v", fullURL, err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
+		}
+
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read metadata response body: %v", err)
+		}
+
+		metadata[url] = string(data)
+	}
+	return metadata, nil
+}
+
+// Function to update DynamoDB asynchronously
+func updateDynamoDB(details InstanceDetails) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion("us-east-1"), // Replace with your desired region
+	)
+	if err != nil {
+		panic("unable to load SDK config, " + err.Error())
+	}
+
+	// Initialize DynamoDB client with the configuration
+	dbSvc = dynamodb.NewFromConfig(cfg)
+
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(dynamoDBHostTableName),
+		Item: map[string]types.AttributeValue{
+			"instance_id":  &types.AttributeValueMemberS{Value: details.InstanceID},
+			"host_type":    &types.AttributeValueMemberS{Value: details.HostType},
+			"os":           &types.AttributeValueMemberS{Value: details.OS},
+			"private_ip":   &types.AttributeValueMemberS{Value: details.PrivateIP},
+			"public_ip":    &types.AttributeValueMemberS{Value: details.PublicIP},
+			"region":       &types.AttributeValueMemberS{Value: details.Region},
+			"time_started": &types.AttributeValueMemberS{Value: details.TimeStarted},
+		},
+	}
+
+	go func() {
+		_, err := dbSvc.PutItem(context.TODO(), input) // Passing context as required
+		if err != nil {
+			log.Printf("failed to log stream start to DynamoDB: %v", err)
+		}
+	}()
+
+}
+
+// Function to update the time_stopped attribute in DynamoDB when the server stops
+func updateDynamoDBStopTime(details InstanceDetails) {
+
+	// Get the current time
+	currentTime := time.Now().Format("15:04:05")
+
+	// Prepare the update input
+	input := &dynamodb.UpdateItemInput{
+		TableName: aws.String(dynamoDBHostTableName),
+		Key: map[string]types.AttributeValue{
+			"instance_id": &types.AttributeValueMemberS{Value: details.InstanceID},
+		},
+		UpdateExpression: aws.String("SET time_stopped = :time_stopped"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":time_stopped": &types.AttributeValueMemberS{Value: currentTime},
+		},
+	}
+
+	// Perform the update operation
+	_, err := dbSvc.UpdateItem(context.TODO(), input)
+	if err != nil {
+		log.Printf("Failed to update time_stopped in DynamoDB: %v", err)
 	}
 }
