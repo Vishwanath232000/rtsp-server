@@ -527,6 +527,7 @@ var dynamoDBHostTableName string
 var server_instance_id string
 var server_operating_system = runtime.GOOS
 var server_environment string
+var server_public_ip string
 
 type InstanceDetails struct {
 	InstanceID string `json:"instance_id"`
@@ -626,6 +627,7 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	server_instance_id = metadata["instance-id"]
 	instanceDetails.HostType = "EC2"
 	instanceDetails.OS = server_operating_system
+	server_public_ip = metadata["public-ipv4"]
 	return instanceDetails, nil
 }
 
@@ -707,6 +709,7 @@ func getFargateMetadata() (InstanceDetails, error) {
 	server_instance_id = taskID
 	instanceDetails.HostType = "Fargate"
 	instanceDetails.OS = server_operating_system
+	server_public_ip = instanceDetails.PublicIP
 	return instanceDetails, nil
 }
 

@@ -2,6 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+
 	// "encoding/hex"
 	"errors"
 	"fmt"
@@ -26,17 +29,17 @@ import (
 	// AWS SDK v2 imports
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 // Global variables
 var (
-	dbSvc              *dynamodb.Client
-	activeSessionCount int
-	countMutex         sync.Mutex
-	dynamoDBTableName  string
+	dbSvc                 *dynamodb.Client
+	activeSessionCount    int
+	countMutex            sync.Mutex
+	dynamoDBTableName     string
+	recordFargateMetadata map[string]types.AttributeValue
 )
 
 func init() {
@@ -57,23 +60,24 @@ func init() {
 		dynamoDBTableName = "sam-rtsp-virtual-streams"
 
 	}
+
 }
 
-func getInstanceID() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+// func getInstanceID() string {
+// 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+// 	defer cancel()
 
-	client := imds.New(imds.Options{})
+// 	client := imds.New(imds.Options{})
 
-	// Get instance ID from IMDS
-	instanceID, err := client.GetInstanceIdentityDocument(ctx, &imds.GetInstanceIdentityDocumentInput{})
+// 	// Get instance ID from IMDS
+// 	instanceID, err := client.GetInstanceIdentityDocument(ctx, &imds.GetInstanceIdentityDocumentInput{})
 
-	if err != nil {
-		return "local-instance" // fallback for local testing
-	}
+// 	if err != nil {
+// 		return "local-instance" // fallback for local testing
+// 	}
 
-	return instanceID.InstanceID
-}
+// 	return instanceID.InstanceID
+// }
 
 const (
 	pauseAfterAuthError = 2 * time.Second
@@ -212,44 +216,12 @@ func (s *rtspSession) onClose(err error) {
 				},
 			},
 		}
-		// input := &dynamodb.UpdateItemInput{
-		// 	TableName: aws.String(dynamoDBTableName),
-		// 	Key: map[string]types.AttributeValue{
-		// 		"stream_id": &types.AttributeValueMemberS{
-		// 			Value: s.path.Name(),
-		// 		},
-		// 	},
-		// 	UpdateExpression:    aws.String("REMOVE time_connected SET time_disconnected = :time_disconnected, is_active = :is_active"),
-		// 	ConditionExpression: aws.String("is_active = :is_active_condition"),
-		// 	ExpressionAttributeValues: map[string]types.AttributeValue{
-		// 		":time_disconnected": &types.AttributeValueMemberS{
-		// 			Value: timestamp,
-		// 		},
-		// 		":is_active": &types.AttributeValueMemberBOOL{
-		// 			Value: false,
-		// 		},
-		// 		":is_active_condition": &types.AttributeValueMemberBOOL{
-		// 			Value: true,
-		// 		},
-		// 	},
-		// }
-		// Update DynamoDB asynchronously
 		go func() {
 			_, err := dbSvc.UpdateItem(context.TODO(), input) // Passing context as required
 			if err != nil {
 				s.log(logger.Error, "failed to log stream stop to DynamoDB: %v", err)
 			}
 		}()
-		// rtsp_path := s.path.Name()
-
-		// fmt.Println("|", activeSessionCount ,"|", rtsp_path ,"|", s.uuid ,"| ( Stopped )")
-		// countMutex.Lock()
-		// activeSessionCount--
-		// formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
-		// countMutex.Unlock()
-
-		// fmt.Printf("| %s | STOPPED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
-
 	}
 	s.log(logger.Debug, "onClose: End-99")
 
@@ -453,10 +425,6 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	activeSessionCount++
 	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
 	countMutex.Unlock()
-	// s.log(logger.Debug,"onRecord: End-2")
-	timestamp := time.Now().UTC().Format(time.RFC3339)
-
-	// fmt.Printf(timestamp, " | %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
 	s.log(logger.Info, "| %s | STARTED | %s", formattedSessionCount, s.path.Name())
 
@@ -464,49 +432,18 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
 
 	// Log to DynamoDB for publishers
+	if server_environment == "Fargate" {
+		update_Fargate_Stream_info_DynamoDB(s.path.Name(), s.uuid.String(), s.author.NetConn().RemoteAddr().String())
+	} else {
+		update_EC2_Stream_info_DynamoDB(s.path.Name(), s.uuid.String(), s.author.NetConn().RemoteAddr().String())
 
-	input := &dynamodb.PutItemInput{
-		TableName: aws.String(dynamoDBTableName),
-		Item: map[string]types.AttributeValue{
-			"stream_id": &types.AttributeValueMemberS{
-				Value: s.path.Name(),
-			},
-			"is_active": &types.AttributeValueMemberBOOL{
-				Value: true,
-			},
-			"rstp_server_id": &types.AttributeValueMemberS{
-				Value: getInstanceID(),
-			},
-			"session_id": &types.AttributeValueMemberS{
-				Value: s.uuid.String(),
-			},
-			"streamer_ip_address": &types.AttributeValueMemberS{
-				Value: s.author.NetConn().RemoteAddr().String(),
-			},
-			"time_connected": &types.AttributeValueMemberS{
-				Value: timestamp,
-			},
-		},
 	}
-
-	go func() {
-		_, err := dbSvc.PutItem(context.TODO(), input) // Passing context as required
-		if err != nil {
-			s.log(logger.Error, "failed to log stream start to DynamoDB: %v", err)
-		}
-	}()
 
 	s.stream = res.stream
 
 	s.stateMutex.Lock()
 	s.state = gortsplib.ServerSessionStateRecord
 	s.stateMutex.Unlock()
-	// countMutex.Lock()
-	// activeSessionCount++
-	// formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
-	// countMutex.Unlock()
-
-	// fmt.Printf("| %s | STARTED | %s | %s\n", formattedSessionCount, s.uuid, s.path.Name())
 
 	s.log(logger.Debug, "rtsp_session.go> onRecord: End-99")
 
@@ -622,4 +559,157 @@ func (s *rtspSession) onPacketRTP(ctx *gortsplib.ServerHandlerOnPacketRTPCtx) {
 // onDecodeError is called by rtspServer.
 func (s *rtspSession) onDecodeError(ctx *gortsplib.ServerHandlerOnDecodeErrorCtx) {
 	s.log(logger.Warn, "%v", ctx.Error)
+}
+
+func update_EC2_Stream_info_DynamoDB(stream_id string, session_id string, streamer_ip_address string) {
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(dynamoDBTableName),
+		Item: map[string]types.AttributeValue{
+			"stream_id": &types.AttributeValueMemberS{
+				Value: stream_id,
+			},
+			"is_active": &types.AttributeValueMemberBOOL{
+				Value: true,
+			},
+			"rtsp_server_id": &types.AttributeValueMemberS{
+				Value: server_instance_id,
+			},
+			"rtsp_server_ip": &types.AttributeValueMemberS{
+				Value: server_environment,
+			},
+			"session_id": &types.AttributeValueMemberS{
+				Value: session_id,
+			},
+			"streamer_ip_address": &types.AttributeValueMemberS{
+				Value: streamer_ip_address,
+			},
+			"time_connected": &types.AttributeValueMemberS{
+				Value: timestamp,
+			},
+		},
+	}
+
+	go func() {
+		_, err := dbSvc.PutItem(context.TODO(), input) // Passing context as required
+		if err != nil {
+			log.Printf("failed to log stream start to DynamoDB: %v", err)
+		}
+	}()
+
+}
+
+func update_Fargate_Stream_info_DynamoDB(stream_id string, session_id string, streamer_ip_address string) {
+	recordFargateMetadata = getFargateMetadataMap()
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(dynamoDBTableName),
+		Item: map[string]types.AttributeValue{
+			"stream_id": &types.AttributeValueMemberS{
+				Value: stream_id,
+			},
+			"is_active": &types.AttributeValueMemberBOOL{
+				Value: true,
+			},
+			"rtsp_server_id": &types.AttributeValueMemberS{
+				Value: server_instance_id,
+			},
+			"rtsp_server_ip": &types.AttributeValueMemberS{
+				Value: server_public_ip,
+			},
+			"session_id": &types.AttributeValueMemberS{
+				Value: session_id,
+			},
+			"streamer_ip_address": &types.AttributeValueMemberS{
+				Value: streamer_ip_address,
+			},
+			"time_connected": &types.AttributeValueMemberS{
+				Value: timestamp,
+			},
+			"record_fargate_metadata": &types.AttributeValueMemberM{
+				Value: recordFargateMetadata,
+			},
+		},
+	}
+
+	go func() {
+		_, err := dbSvc.PutItem(context.TODO(), input) // Passing context as required
+		if err != nil {
+			log.Printf("failed to log stream start to DynamoDB: %v", err)
+		}
+	}()
+
+}
+
+func getFargateMetadataMap() map[string]types.AttributeValue {
+	metadataUri := os.Getenv("ECS_CONTAINER_METADATA_URI_V4")
+	if metadataUri == "" {
+		metadataUri = "http://169.254.170.2/v4"
+	}
+
+	taskEndpoint := metadataUri + "/task"
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", taskEndpoint, nil)
+	if err != nil {
+		log.Printf("Error creating request for Fargate metadata: %v", err)
+		return nil
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("Error retrieving Fargate metadata: %v", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	// Parse the metadata JSON response into a generic map
+	var metadata map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+		log.Printf("Error decoding Fargate metadata JSON: %v", err)
+		return nil
+	}
+
+	// Convert JSON map to DynamoDB map structure
+	dynamoMap := convertToDynamoDBMap(metadata)
+	return dynamoMap
+}
+
+// Helper function to recursively convert JSON map to DynamoDB map
+func convertToDynamoDBMap(data map[string]interface{}) map[string]types.AttributeValue {
+	dynamoMap := make(map[string]types.AttributeValue)
+	for key, value := range data {
+		switch v := value.(type) {
+		case string:
+			dynamoMap[key] = &types.AttributeValueMemberS{Value: v}
+		case bool:
+			dynamoMap[key] = &types.AttributeValueMemberBOOL{Value: v}
+		case float64: // AWS DynamoDB uses string or integer, float handling may vary
+			dynamoMap[key] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v)}
+		case map[string]interface{}:
+			dynamoMap[key] = &types.AttributeValueMemberM{Value: convertToDynamoDBMap(v)}
+		case []interface{}:
+			dynamoMap[key] = &types.AttributeValueMemberL{Value: convertToDynamoDBList(v)}
+		}
+	}
+	return dynamoMap
+}
+
+// Helper function to convert a list to DynamoDB list format
+func convertToDynamoDBList(data []interface{}) []types.AttributeValue {
+	var dynamoList []types.AttributeValue
+	for _, item := range data {
+		switch v := item.(type) {
+		case string:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberS{Value: v})
+		case bool:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberBOOL{Value: v})
+		case float64:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v)})
+		case map[string]interface{}:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberM{Value: convertToDynamoDBMap(v)})
+		}
+	}
+	return dynamoList
 }
