@@ -528,6 +528,7 @@ var server_operating_system = runtime.GOOS
 
 // init is called automatically when the package is loaded
 func init() {
+
 	dynamoDBHostTableName = os.Getenv("DYNAMODB_HOST_INFO_TABLE_NAME")
 	if dynamoDBHostTableName == "" {
 		log.Fatal("DYNAMODB_TABLE_NAME environment variable is not set")
@@ -546,37 +547,6 @@ func init() {
 		updateDynamoDB(instanceDetails)
 	}()
 }
-
-// Fetch EC2 instance metadata
-// Function to fetch EC2 instance metadata with IMDSv2 token
-// const EC2APIURL = "http://169.254.169.254/latest/meta-data/"
-// const EC2MetadataTokenURI = "http://169.254.169.254/latest/api/token"
-// const EC2MetadataTokenTTL = "21600"
-
-// func getMetadataToken() (string, error) {
-// 	req, err := http.NewRequest("PUT", EC2MetadataTokenURI, nil)
-// 	if err != nil {
-// 		return "", fmt.Errorf("failed to create request: %v", err)
-// 	}
-// 	req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
-
-// 	resp, err := http.DefaultClient.Do(req)
-// 	if err != nil {
-// 		return "", fmt.Errorf("failed to request token: %v", err)
-// 	}
-// 	defer resp.Body.Close()
-
-// 	if resp.StatusCode != http.StatusOK {
-// 		return "", fmt.Errorf("failed to retrieve token: %v", resp.Status)
-// 	}
-
-// 	token, err := io.ReadAll(resp.Body)
-// 	if err != nil {
-// 		return "", fmt.Errorf("failed to read token response: %v", err)
-// 	}
-
-// 	return string(token), nil
-// }
 
 func getMetadataUsingToken() (map[string]string, error) {
 	metadata := make(map[string]string)
@@ -615,12 +585,6 @@ func getMetadataUsingToken() (map[string]string, error) {
 
 func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails := InstanceDetails{}
-	// token, err := getMetadataToken()
-	// if err != nil {
-	// 	return instanceDetails, fmt.Errorf("failed to get metadata token: %v", err)
-	// }
-
-	// Get all metadata using the token
 	metadata, err := getMetadataUsingToken()
 	if err != nil {
 		return instanceDetails, fmt.Errorf("failed to get instance metadata: %v", err)
