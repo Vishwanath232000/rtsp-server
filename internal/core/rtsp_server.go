@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -525,25 +526,52 @@ func (s *rtspServer) apiSessionsKick(id string) rtspServerAPISessionsKickRes {
 var dynamoDBHostTableName string
 var server_instance_id string
 var server_operating_system = runtime.GOOS
+var server_environment string
+
+type InstanceDetails struct {
+	InstanceID string `json:"instance_id"`
+	HostType   string `json:"host_type"`
+	OS         string `json:"os"`
+	PrivateIP  string `json:"private_ip"`
+	PublicIP   string `json:"public_ip"`
+	Region     string `json:"region"`
+}
 
 // init is called automatically when the package is loaded
 func init() {
-
 	dynamoDBHostTableName = os.Getenv("DYNAMODB_HOST_INFO_TABLE_NAME")
 	if dynamoDBHostTableName == "" {
 		log.Fatal("DYNAMODB_TABLE_NAME environment variable is not set")
 		dynamoDBHostTableName = "sam-rtsp-server-hosts"
 	}
-	// Fetch EC2 instance metadata and start background DynamoDB update
+
+	// Determine if running on Fargate or EC2
 	go func() {
-		instanceDetails, err := getInstanceMetadata()
-		if err != nil {
-			log.Printf("Failed to get instance metadata: %v", err)
-			return
+		var instanceDetails InstanceDetails
+		var err error
+
+		// Check if Fargate metadata URI is set to decide the environment
+		if os.Getenv("ECS_CONTAINER_METADATA_URI_V4") != "" {
+
+			// Running on Fargate
+			instanceDetails, err = getFargateMetadata()
+			if err != nil {
+				log.Printf("Failed to get Fargate metadata: %v", err)
+				return
+			}
+		} else {
+			// Assume running on EC2
+			instanceDetails, err = getInstanceMetadata()
+
+			if err != nil {
+				log.Printf("Failed to get EC2 instance metadata: %v", err)
+				return
+			}
 		}
 
-		// Start the background update to DynamoDB
-		log.Println(instanceDetails)
+		// Log instance details and start the background update to DynamoDB
+		log.Println("Instance details : ", instanceDetails)
+		log.Println("Server : ", instanceDetails.HostType)
 		updateDynamoDB(instanceDetails)
 	}()
 }
@@ -595,8 +623,89 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails.Region = metadata["placement/availability-zone"]
 	instanceDetails.PublicIP = metadata["public-ipv4"]
 	instanceDetails.PrivateIP = metadata["local-ipv4"]
-	instanceDetails.HostType = metadata["instance-type"]
 	server_instance_id = metadata["instance-id"]
+	instanceDetails.HostType = "EC2"
+	instanceDetails.OS = server_operating_system
+	return instanceDetails, nil
+}
+
+func getFargateMetadata() (InstanceDetails, error) {
+	var instanceDetails InstanceDetails
+
+	// Get the metadata URI from the environment variable
+	metadataUri := os.Getenv("ECS_CONTAINER_METADATA_URI_V4")
+	if metadataUri == "" {
+		metadataUri = "http://169.254.170.2/v4"
+	}
+
+	// Append /task to get full task metadata
+	taskEndpoint := metadataUri + "/task"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", taskEndpoint, nil)
+	if err != nil {
+		return instanceDetails, fmt.Errorf("error creating request for Fargate metadata: %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return instanceDetails, fmt.Errorf("error retrieving Fargate metadata: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var metadata struct {
+		TaskARN    string `json:"TaskARN"`
+		Containers []struct {
+			Networks []struct {
+				NetworkMode       string   `json:"NetworkMode"`
+				IPv4Addresses     []string `json:"IPv4Addresses"`
+				PublicIPv4Address string   `json:"PublicIPv4Address"`
+			} `json:"Networks"`
+		} `json:"Containers"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
+		return instanceDetails, fmt.Errorf("error decoding Fargate metadata JSON: %v", err)
+	}
+
+	// Extract the Task ID and Region from the Task ARN
+	arnParts := strings.Split(metadata.TaskARN, ":")
+	if len(arnParts) > 3 {
+		instanceDetails.Region = arnParts[3]
+	} else {
+		instanceDetails.Region = "unknown" // fallback if parsing fails
+	}
+
+	taskID := "task-id"
+	taskIDParts := strings.Split(metadata.TaskARN, "/")
+	if len(taskIDParts) > 1 {
+		taskID = taskIDParts[len(taskIDParts)-1]
+	}
+	instanceDetails.InstanceID = taskID
+
+	// Iterate over containers to find the network info
+	for _, container := range metadata.Containers {
+		if len(container.Networks) > 0 {
+			publicIP := container.Networks[0].PublicIPv4Address
+			privateIPs := container.Networks[0].IPv4Addresses
+
+			// Set Public IP if available
+			if publicIP != "" {
+				instanceDetails.PublicIP = publicIP
+			}
+
+			// Set Private IP if available
+			if len(privateIPs) > 0 {
+				instanceDetails.PrivateIP = privateIPs[0]
+			}
+		}
+	}
+
+	// Set HostType and OS for DynamoDB (these may be known/static values)
+	server_instance_id = taskID
+	instanceDetails.HostType = "Fargate"
 	instanceDetails.OS = server_operating_system
 	return instanceDetails, nil
 }

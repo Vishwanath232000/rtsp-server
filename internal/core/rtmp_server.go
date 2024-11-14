@@ -47,14 +47,6 @@ type rtmpServerParent interface {
 	Log(logger.Level, string, ...interface{})
 }
 
-type InstanceDetails struct {
-	InstanceID string `json:"instance_id"`
-	HostType   string `json:"host_type"`
-	OS         string `json:"os"`
-	PrivateIP  string `json:"private_ip"`
-	PublicIP   string `json:"public_ip"`
-	Region     string `json:"region"`
-}
 type rtmpServer struct {
 	externalAuthenticationURL string
 	readTimeout               conf.StringDuration
