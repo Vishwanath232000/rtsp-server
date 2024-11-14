@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -579,36 +580,29 @@ func getMetadataToken() (string, error) {
 }
 
 // Function to get the IMDSv2 token
-func getMetadataUsingToken(token string) (map[string]string, error) {
-	metadata := make(map[string]string)
 
-	// Define all metadata URIs that you need to fetch
-	urls := []string{
-		"instance-id",
-		"placement/availability-zone",
-		"public-ipv4",
-		"local-ipv4",
+func getMetadataUsingToken(token string) (map[string]string, error) {
+	// Construct the full metadata URL
+	metadataURL := "http://169.254.169.254/latest/dynamic/instance-identity/document"
+
+	// Make the HTTP GET request to fetch the metadata
+	resp, err := http.Get(metadataURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch metadata: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read metadata response body: %v", err)
 	}
 
-	// Loop through each URL and fetch the metadata
-	for _, url := range urls {
-		fullURL := "http://169.254.169.254/latest/meta-data/" + url
-		resp, err := http.Get(fullURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch metadata from %s: %v", fullURL, err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
-		}
-
-		data, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read metadata response body: %v", err)
-		}
-
-		metadata[url] = string(data)
+	// Parse the JSON response into a map
+	metadata := make(map[string]string)
+	err = json.Unmarshal(data, &metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse metadata JSON: %v", err)
 	}
 
 	return metadata, nil
