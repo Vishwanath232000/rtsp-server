@@ -628,7 +628,7 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	instanceDetails.HostType = "EC2"
 	server_environment = "EC2"
 	instanceDetails.OS = server_operating_system
-	server_public_ip = metadata["public-ipv4"]
+	server_public_ip = getPublicIP()
 	return instanceDetails, nil
 }
 
@@ -711,7 +711,7 @@ func getFargateMetadata() (InstanceDetails, error) {
 	instanceDetails.HostType = "Fargate"
 	server_environment = "Fargate"
 	instanceDetails.OS = server_operating_system
-	server_public_ip = instanceDetails.PublicIP
+	server_public_ip = getPublicIP()
 	return instanceDetails, nil
 }
 
@@ -773,4 +773,21 @@ func updateDynamoDBStopTime(server_instance_id string) {
 	if err != nil {
 		log.Printf("Failed to update time_stopped in DynamoDB: %v", err)
 	}
+}
+
+func getPublicIP() string {
+	resp, err := http.Get("https://api.ipify.org?format=json")
+	if err != nil {
+		log.Printf("error fetching public IP: %v", err)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var result map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("error fetching public IP: %v", err)
+		return ""
+	}
+
+	return result["ip"]
 }

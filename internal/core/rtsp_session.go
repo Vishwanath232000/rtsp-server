@@ -31,6 +31,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
 // Global variables
@@ -40,6 +42,7 @@ var (
 	countMutex            sync.Mutex
 	dynamoDBTableName     string
 	recordFargateMetadata map[string]types.AttributeValue
+	sqsSvc                *sqs.SQS
 )
 
 func init() {
@@ -60,6 +63,11 @@ func init() {
 		dynamoDBTableName = "sam-rtsp-virtual-streams"
 
 	}
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	}))
+
+	sqsSvc = sqs.New(sess)
 
 }
 
@@ -432,6 +440,25 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
 
 	// Log to DynamoDB for publishers
+	sqsInput := &sqs.SendMessageInput{
+		MessageBody: aws.String(fmt.Sprintf(`{"adapter_wifimac": "%s", "server_public_ip": "%s"}`, s.path.Name(), server_public_ip)),
+		QueueUrl:    aws.String("https://sqs.us-east-1.amazonaws.com/354918397507/vish-stream-sqs"), // Replace with your SQS queue URL
+	}
+
+	// Send message
+	sqsResp, err := sqsSvc.SendMessage(sqsInput)
+	if err != nil {
+		log.Printf("Failed to send message to SQS: %v", err)
+	}
+
+	// Use SQS message ID
+	if sqsResp.MessageId != nil {
+		messageID := *sqsResp.MessageId
+		log.Printf("Message sent to SQS successfully, MessageId: %s", messageID)
+	} else {
+		log.Println("MessageId is nil in SQS response")
+	}
+
 	if server_environment == "Fargate" {
 		update_Fargate_Stream_info_DynamoDB(s.path.Name(), s.uuid.String(), s.author.NetConn().RemoteAddr().String())
 	} else {
