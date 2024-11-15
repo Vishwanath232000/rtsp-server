@@ -441,7 +441,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 
 	// Log to DynamoDB for publishers
 	sqsInput := &sqs.SendMessageInput{
-		MessageBody: aws.String(fmt.Sprintf(`{"adapter_wifimac": "%s", "server_public_ip": "%s"}`, s.path.Name(), server_public_ip)),
+		MessageBody: aws.String(fmt.Sprintf(`{"adapter_wifimac": "%s", "server_public_ip": "%s","server_private_ip": "%s"}`, s.path.Name(), server_public_ip, server_private_ip)),
 		QueueUrl:    aws.String("https://sqs.us-east-1.amazonaws.com/354918397507/vish-stream-sqs"), // Replace with your SQS queue URL
 	}
 

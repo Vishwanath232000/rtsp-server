@@ -528,6 +528,7 @@ var server_instance_id string
 var server_operating_system = runtime.GOOS
 var server_environment string
 var server_public_ip string
+var server_private_ip string
 
 type InstanceDetails struct {
 	InstanceID string `json:"instance_id"`
@@ -629,6 +630,7 @@ func getInstanceMetadata() (InstanceDetails, error) {
 	server_environment = "EC2"
 	instanceDetails.OS = server_operating_system
 	server_public_ip = getPublicIP()
+	server_private_ip = metadata["local-ipv4"]
 	return instanceDetails, nil
 }
 
@@ -712,6 +714,7 @@ func getFargateMetadata() (InstanceDetails, error) {
 	server_environment = "Fargate"
 	instanceDetails.OS = server_operating_system
 	server_public_ip = getPublicIP()
+	server_private_ip = instanceDetails.PrivateIP
 	return instanceDetails, nil
 }
 
@@ -735,7 +738,7 @@ func updateDynamoDB(details InstanceDetails) {
 			"host_type":    &types.AttributeValueMemberS{Value: details.HostType},
 			"os":           &types.AttributeValueMemberS{Value: details.OS},
 			"private_ip":   &types.AttributeValueMemberS{Value: details.PrivateIP},
-			"public_ip":    &types.AttributeValueMemberS{Value: details.PublicIP},
+			"public_ip":    &types.AttributeValueMemberS{Value: server_public_ip},
 			"region":       &types.AttributeValueMemberS{Value: details.Region},
 			"time_started": &types.AttributeValueMemberS{Value: timestamp},
 		},
