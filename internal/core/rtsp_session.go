@@ -435,21 +435,35 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
 
 	// Log to DynamoDB for publishers
+	messagePayload := map[string]string{
+		"adapter_wifimac":   s.path.Name(),
+		"server_public_ip":  server_public_ip,
+		"server_private_ip": server_private_ip,
+	}
+
+	messageBody, err := json.Marshal(messagePayload)
+	if err != nil {
+		log.Printf("Failed to marshal message body: %v", err)
+
+	}
+
+	// Create the SendMessageInput
 	sqsInput := &sqs.SendMessageInput{
-		MessageBody: aws.String(fmt.Sprintf(`{"adapter_wifimac": "%s", "server_public_ip": "%s","server_private_ip": "%s"}`, s.path.Name(), server_public_ip, server_private_ip)),
+		MessageBody: aws.String(string(messageBody)),
 		QueueUrl:    aws.String("https://sqs.us-east-1.amazonaws.com/354918397507/vish-stream-sqs"), // Replace with your SQS queue URL
 	}
 
-	// Send message
-	sqsResp, err := sqsSvc.SendMessage(sqsInput)
+	// Send the message
+	ctx1, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	sqsResp, err := sqsSvc.SendMessage(ctx1, sqsInput)
 	if err != nil {
 		log.Printf("Failed to send message to SQS: %v", err)
 	}
 
-	// Use SQS message ID
+	// Check and log the Message ID
 	if sqsResp.MessageId != nil {
-		messageID := *sqsResp.MessageId
-		log.Printf("Message sent to SQS successfully, MessageId: %s", messageID)
+		log.Printf("Message sent to SQS successfully, MessageId: %s", *sqsResp.MessageId)
 	} else {
 		log.Println("MessageId is nil in SQS response")
 	}
