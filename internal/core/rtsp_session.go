@@ -31,8 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
 // Global variables
@@ -63,11 +62,7 @@ func init() {
 		dynamoDBTableName = "sam-rtsp-virtual-streams"
 
 	}
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
-
-	sqsSvc = sqs.New(sess)
+	sqsSvc = sqs.NewFromConfig(cfg)
 
 }
 
