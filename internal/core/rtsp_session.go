@@ -41,7 +41,7 @@ var (
 	countMutex            sync.Mutex
 	dynamoDBTableName     string
 	recordFargateMetadata map[string]types.AttributeValue
-	sqsSvc                *sqs.SQS
+	sqsSvc                *sqs.Client
 )
 
 func init() {
