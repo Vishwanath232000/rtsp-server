@@ -454,9 +454,9 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	}
 
 	// Send the message
-	ctx1, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	sqsResp, err := sqsSvc.SendMessage(ctx1, sqsInput)
+	// ctx1, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// defer cancel()
+	sqsResp, err := sqsSvc.SendMessage(context.Background(), sqsInput)
 	if err != nil {
 		log.Printf("Failed to send message to SQS: %v", err)
 	}
