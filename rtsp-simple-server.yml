@@ -182,8 +182,8 @@ paths:
       ffmpeg -i rtsp://localhost:$RTSP_PORT/$RTSP_PATH 
       -f segment -segment_time 5 -c copy 
       /tmp/audio_%03d.ts && 
-      aws s3 cp /tmp/audio_*.ts s3://output.audio/ && 
-      rm /tmp/audio_*.ts
+      aws s3 mv /tmp/audio_*.ts s3://output.audio/audio/ && 
+      rm -f /tmp/audio_*.ts
     runOnReadyRestart: yes
 
     # Source of the stream. This can be:
