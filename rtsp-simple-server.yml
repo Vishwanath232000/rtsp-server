@@ -177,6 +177,15 @@ hlsTrustedProxies: []
 # another entry.
 paths:
   all:
+  original:
+    runOnReady: >
+      ffmpeg -i rtsp://localhost:$RTSP_PORT/$RTSP_PATH 
+      -f segment -segment_time 5 -c copy 
+      /tmp/audio_%03d.ts && 
+      aws s3 cp /tmp/audio_*.ts s3://output.audio/ && 
+      rm /tmp/audio_*.ts
+    runOnReadyRestart: yes
+
     # Source of the stream. This can be:
     # * publisher -> the stream is published by a RTSP or RTMP client
     # * rtsp://existing-url -> the stream is pulled from another RTSP server / camera
@@ -338,9 +347,9 @@ paths:
     # * RTSP_PORT: server port
     # * G1, G2, ...: regular expression groups, if path name is
     #   a regular expression.
-    runOnReady:
-    # Restart the command if it exits suddenly.
-    runOnReadyRestart: no
+    # runOnReady:
+    # # Restart the command if it exits suddenly.
+    # runOnReadyRestart: no
 
     # Command to run when a clients starts reading.
     # This is terminated with SIGINT when a client stops reading.
