@@ -177,14 +177,9 @@ hlsTrustedProxies: []
 # another entry.
 paths:
   all:
-  original:
-    runOnReady: >
-      ffmpeg -i rtsp://localhost:$RTSP_PORT/$RTSP_PATH 
-      -f segment -segment_time 5 -c copy 
-      /tmp/audio_%03d.ts && 
-      aws s3 mv /tmp/audio_*.ts s3://output.audio/audio/ && 
-      rm -f /tmp/audio_*.ts
+    runOnReady: ffmpeg -i rtsp://localhost:$RTSP_PORT/$RTSP_PATH -vn -acodec pcm_s16le -ar 44100 -ac 2 output_audio.wav
     runOnReadyRestart: yes
+
 
     # Source of the stream. This can be:
     # * publisher -> the stream is published by a RTSP or RTMP client
