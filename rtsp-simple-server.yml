@@ -177,7 +177,7 @@ hlsTrustedProxies: []
 # another entry.
 paths:
   all:
-    runOnReady: ffmpeg -i rtsp://localhost:8554/stream -vn -acodec pcm_s16le -ar 44100 -ac 2 -f segment -segment_time 5 -segment_format wav /rtsp-server/audio_chunks/output_%Y-%m-%d_%H-%M-%S.wav
+    runOnReady: ffmpeg -i rtsp://localhost:$RTSP_PORT/$RTSP_PATH -vn -acodec pcm_s16le -ar 44100 -ac 2 -f segment -segment_time 5 -segment_format wav /rtsp-server/audio_chunks/output_%Y-%m-%d_%H-%M-%S.wav
 
     runOnReadyRestart: yes
 
