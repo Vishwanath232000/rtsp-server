@@ -197,7 +197,7 @@ func (s *rtspSession) onClose(err error) {
 		// Only log to DynamoDB and print stop message for publishers
 		updateStreamDynamoDBStopTime(s.path.Name(), timestamp)
 
-		updateServerDynamoDB(s.path.Name(), formattedSessionCount, timestamp)
+		updateServerDynamoDB(rtsp_server_id, formattedSessionCount, timestamp)
 
 	}
 	s.log(logger.Debug, "onClose: End-99")
@@ -444,7 +444,7 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	populateStreamDynamoDB(s.path.Name(), s.uuid.String(), s.author.NetConn().RemoteAddr().String(), timestamp)
-	updateServerDynamoDB(s.path.Name(), formattedSessionCount, timestamp)
+	updateServerDynamoDB(rtsp_server_id, formattedSessionCount, timestamp)
 
 	s.stream = res.stream
 
