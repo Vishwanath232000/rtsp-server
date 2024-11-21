@@ -603,12 +603,12 @@ func populateStreamDynamoDB(stream_id string, session_id string, streamer_ip_add
 
 }
 
-func updateServerDynamoDB(stream_id string, formatted_session_count string, time_updated string) {
+func updateServerDynamoDB(rtsp_server_id string, formatted_session_count string, time_updated string) {
 	input := &dynamodb.UpdateItemInput{
 		TableName: aws.String(dynamoDBServerTableName),
 		Key: map[string]types.AttributeValue{
-			"stream_id": &types.AttributeValueMemberS{
-				Value: stream_id,
+			"rtsp_server_id": &types.AttributeValueMemberS{
+				Value: rtsp_server_id,
 			},
 		},
 		UpdateExpression: aws.String("SET time_updated = :time_updated , session_count=:session_count"),

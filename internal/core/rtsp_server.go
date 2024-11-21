@@ -843,7 +843,7 @@ func updateEC2ServerDynamoDB() {
 }
 
 // Function to update the time_stopped attribute in DynamoDB when the server stops
-func updateDynamoDBStopTime(server_instance_id string) {
+func updateDynamoDBStopTime(rtsp_server_id string) {
 
 	// Get the current time
 	timestamp := time.Now().UTC().Format(time.RFC3339)
@@ -852,7 +852,7 @@ func updateDynamoDBStopTime(server_instance_id string) {
 	input := &dynamodb.UpdateItemInput{
 		TableName: aws.String(dynamoDBServerTableName),
 		Key: map[string]types.AttributeValue{
-			"instance_id": &types.AttributeValueMemberS{Value: server_instance_id},
+			"rtsp_server_id": &types.AttributeValueMemberS{Value: rtsp_server_id},
 		},
 		UpdateExpression: aws.String("SET time_stopped = :time_stopped"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
