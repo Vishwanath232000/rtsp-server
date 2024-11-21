@@ -226,7 +226,7 @@ func (s *rtspServer) log(level logger.Level, format string, args ...interface{})
 }
 
 func (s *rtspServer) close() {
-	updateDynamoDBStopTime(server_instance_id)
+	updateDynamoDBStopTime(rtsp_server_id)
 	s.log(logger.Debug, "rtsp_server.go> close: Begin")
 	s.log(logger.Info, "listener is closing")
 	s.ctxCancel()
@@ -523,62 +523,62 @@ func (s *rtspServer) apiSessionsKick(id string) rtspServerAPISessionsKickRes {
 	return rtspServerAPISessionsKickRes{err: fmt.Errorf("not found")}
 }
 
-var dynamoDBHostTableName string
-var server_instance_id string
-var server_operating_system = runtime.GOOS
-var server_environment string
-var server_public_ip string
-var server_private_ip string
+var (
+	dynamoDBServerTableName string
+	rtsp_server_id          string
+	server_operating_system = runtime.GOOS
+	server_environment      string
+	server_public_ip        string
+	server_private_ip       string
+	server_region           string
+	recordFargateMetadata   map[string]types.AttributeValue
+)
 
-type InstanceDetails struct {
-	InstanceID string `json:"instance_id"`
-	HostType   string `json:"host_type"`
-	OS         string `json:"os"`
-	PrivateIP  string `json:"private_ip"`
-	PublicIP   string `json:"public_ip"`
-	Region     string `json:"region"`
-}
+// type InstanceDetails struct {
+// 	InstanceID string `json:"instance_id"`
+// 	HostType   string `json:"host_type"`
+// 	OS         string `json:"os"`
+// 	PrivateIP  string `json:"private_ip"`
+// 	PublicIP   string `json:"public_ip"`
+// 	Region     string `json:"region"`
+// }
 
 // init is called automatically when the package is loaded
 func init() {
-	dynamoDBHostTableName = os.Getenv("DYNAMODB_HOST_INFO_TABLE_NAME")
-	if dynamoDBHostTableName == "" {
+	dynamoDBServerTableName = os.Getenv("DYNAMODB_HOST_INFO_TABLE_NAME")
+	if dynamoDBServerTableName == "" {
 		log.Fatal("DYNAMODB_TABLE_NAME environment variable is not set")
-		dynamoDBHostTableName = "sam-rtsp-server-hosts"
+		dynamoDBServerTableName = "sam-rtsp-server-hosts"
 	}
 
 	// Determine if running on Fargate or EC2
 	go func() {
-		var instanceDetails InstanceDetails
-		var err error
-
 		// Check if Fargate metadata URI is set to decide the environment
 		if os.Getenv("ECS_CONTAINER_METADATA_URI_V4") != "" {
-
-			// Running on Fargate
-			instanceDetails, err = getFargateMetadata()
-			if err != nil {
+			var err error
+			recordFargateMetadata, err = getFargateMetadata()
+			if nil != err {
 				log.Printf("Failed to get Fargate metadata: %v", err)
 				return
 			}
+			// Log instance details and start the background update to DynamoDB
+			log.Println("Instance details : ", rtsp_server_id)
+			log.Println("Server : ", server_environment)
+			updateFargateServerDynamoDB()
+
 		} else {
 			// Assume running on EC2
-			instanceDetails, err = getInstanceMetadata()
-
-			if err != nil {
-				log.Printf("Failed to get EC2 instance metadata: %v", err)
-				return
-			}
+			getInstanceMetadata()
+			// Log instance details and start the background update to DynamoDB
+			log.Println("Instance details : ", rtsp_server_id)
+			log.Println("Server : ", server_environment)
+			updateEC2ServerDynamoDB()
 		}
 
-		// Log instance details and start the background update to DynamoDB
-		log.Println("Instance details : ", instanceDetails)
-		log.Println("Server : ", instanceDetails.HostType)
-		updateDynamoDB(instanceDetails)
 	}()
 }
 
-func getMetadataUsingToken() (map[string]string, error) {
+func getInstanceMetadataUsingUrl() (map[string]string, error) {
 	metadata := make(map[string]string)
 
 	// Define all metadata URIs that you need to fetch
@@ -613,29 +613,22 @@ func getMetadataUsingToken() (map[string]string, error) {
 	return metadata, nil
 }
 
-func getInstanceMetadata() (InstanceDetails, error) {
-	instanceDetails := InstanceDetails{}
-	metadata, err := getMetadataUsingToken()
+func getInstanceMetadata() {
+	metadata, err := getInstanceMetadataUsingUrl()
 	if err != nil {
-		return instanceDetails, fmt.Errorf("failed to get instance metadata: %v", err)
+		fmt.Errorf("failed to get instance metadata: %v", err)
+		return
 	}
 
 	// Populate the InstanceDetails struct with metadata
-	instanceDetails.InstanceID = metadata["instance-id"]
-	instanceDetails.Region = metadata["placement/availability-zone"]
-	instanceDetails.PublicIP = metadata["public-ipv4"]
-	instanceDetails.PrivateIP = metadata["local-ipv4"]
-	server_instance_id = metadata["instance-id"]
-	instanceDetails.HostType = "EC2"
+	server_region = metadata["placement/availability-zone"]
+	rtsp_server_id = metadata["instance-id"]
 	server_environment = "EC2"
-	instanceDetails.OS = server_operating_system
 	server_public_ip = getPublicIP()
 	server_private_ip = metadata["local-ipv4"]
-	return instanceDetails, nil
 }
 
-func getFargateMetadata() (InstanceDetails, error) {
-	var instanceDetails InstanceDetails
+func getFargateMetadata() (map[string]types.AttributeValue, error) {
 
 	// Get the metadata URI from the environment variable
 	metadataUri := os.Getenv("ECS_CONTAINER_METADATA_URI_V4")
@@ -651,75 +644,137 @@ func getFargateMetadata() (InstanceDetails, error) {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", taskEndpoint, nil)
 	if err != nil {
-		return instanceDetails, fmt.Errorf("error creating request for Fargate metadata: %v", err)
+		return nil, fmt.Errorf("error creating request for Fargate metadata: %v", err)
+
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return instanceDetails, fmt.Errorf("error retrieving Fargate metadata: %v", err)
+		return nil, fmt.Errorf("error retrieving Fargate metadata: %v", err)
+
 	}
 	defer resp.Body.Close()
 
-	var metadata struct {
-		TaskARN    string `json:"TaskARN"`
-		Containers []struct {
-			Networks []struct {
-				NetworkMode       string   `json:"NetworkMode"`
-				IPv4Addresses     []string `json:"IPv4Addresses"`
-				PublicIPv4Address string   `json:"PublicIPv4Address"`
-			} `json:"Networks"`
-		} `json:"Containers"`
+	// var metadata struct {
+	// 	TaskARN    string `json:"TaskARN"`
+	// 	Containers []struct {
+	// 		Networks []struct {
+	// 			NetworkMode       string   `json:"NetworkMode"`
+	// 			IPv4Addresses     []string `json:"IPv4Addresses"`
+	// 			PublicIPv4Address string   `json:"PublicIPv4Address"`
+	// 		} `json:"Networks"`
+	// 	} `json:"Containers"`
+	// }
+	var full_metadata map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&full_metadata); err != nil {
+		return nil, fmt.Errorf("Error decoding Fargate metadata JSON: %v", err)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
-		return instanceDetails, fmt.Errorf("error decoding Fargate metadata JSON: %v", err)
-	}
+	// bodyBytes, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error reading Fargate metadata response body: %v", err)
+	// }
 
 	// Extract the Task ID and Region from the Task ARN
-	arnParts := strings.Split(metadata.TaskARN, ":")
-	if len(arnParts) > 3 {
-		instanceDetails.Region = arnParts[3]
-	} else {
-		instanceDetails.Region = "unknown" // fallback if parsing fails
+	taskARN, ok := full_metadata["TaskARN"].(string)
+	if !ok {
+		return nil, fmt.Errorf("TaskARN not found or invalid in metadata")
 	}
 
-	taskID := "task-id"
-	taskIDParts := strings.Split(metadata.TaskARN, "/")
+	// Extract Task ID from TaskARN
+	taskIDParts := strings.Split(taskARN, "/")
 	if len(taskIDParts) > 1 {
-		taskID = taskIDParts[len(taskIDParts)-1]
+		rtsp_server_id = taskIDParts[len(taskIDParts)-1]
+	} else {
+		return nil, fmt.Errorf("failed to parse task ID from TaskARN")
 	}
-	instanceDetails.InstanceID = taskID
 
-	// Iterate over containers to find the network info
-	for _, container := range metadata.Containers {
-		if len(container.Networks) > 0 {
-			publicIP := container.Networks[0].PublicIPv4Address
-			privateIPs := container.Networks[0].IPv4Addresses
+	// Extract Region from TaskARN
+	arnParts := strings.Split(taskARN, ":")
+	if len(arnParts) > 3 {
+		server_region = arnParts[3]
+	} else {
+		return nil, fmt.Errorf("failed to parse region from TaskARN")
+	}
 
-			// Set Public IP if available
-			if publicIP != "" {
-				instanceDetails.PublicIP = publicIP
-			}
+	// Fetch Private IP from Containers > Networks > IPv4Addresses
+	containers, ok := full_metadata["Containers"].([]interface{})
+	if !ok || len(containers) == 0 {
+		return nil, fmt.Errorf("no containers found in metadata")
+	}
 
-			// Set Private IP if available
-			if len(privateIPs) > 0 {
-				instanceDetails.PrivateIP = privateIPs[0]
-			}
-		}
+	firstContainer, ok := containers[0].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid container format in metadata")
+	}
+
+	networks, ok := firstContainer["Networks"].([]interface{})
+	if !ok || len(networks) == 0 {
+		return nil, fmt.Errorf("no networks found in container metadata")
+	}
+
+	firstNetwork, ok := networks[0].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid network format in metadata")
+	}
+
+	ipv4Addresses, ok := firstNetwork["IPv4Addresses"].([]interface{})
+	if !ok || len(ipv4Addresses) == 0 {
+		return nil, fmt.Errorf("no IPv4 addresses found in network metadata")
+	}
+
+	server_private_ip, ok = ipv4Addresses[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid IPv4 address format")
 	}
 
 	// Set HostType and OS for DynamoDB (these may be known/static values)
-	server_instance_id = taskID
-	instanceDetails.HostType = "Fargate"
 	server_environment = "Fargate"
-	instanceDetails.OS = server_operating_system
 	server_public_ip = getPublicIP()
-	server_private_ip = instanceDetails.PrivateIP
-	return instanceDetails, nil
+	dynamoMap := convertToDynamoDBMap(full_metadata)
+	return dynamoMap, nil
+}
+
+// Helper function to recursively convert JSON map to DynamoDB map
+func convertToDynamoDBMap(data map[string]interface{}) map[string]types.AttributeValue {
+	dynamoMap := make(map[string]types.AttributeValue)
+	for key, value := range data {
+		switch v := value.(type) {
+		case string:
+			dynamoMap[key] = &types.AttributeValueMemberS{Value: v}
+		case bool:
+			dynamoMap[key] = &types.AttributeValueMemberBOOL{Value: v}
+		case float64: // AWS DynamoDB uses string or integer, float handling may vary
+			dynamoMap[key] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v)}
+		case map[string]interface{}:
+			dynamoMap[key] = &types.AttributeValueMemberM{Value: convertToDynamoDBMap(v)}
+		case []interface{}:
+			dynamoMap[key] = &types.AttributeValueMemberL{Value: convertToDynamoDBList(v)}
+		}
+	}
+	return dynamoMap
+}
+
+// Helper function to convert a list to DynamoDB list format
+func convertToDynamoDBList(data []interface{}) []types.AttributeValue {
+	var dynamoList []types.AttributeValue
+	for _, item := range data {
+		switch v := item.(type) {
+		case string:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberS{Value: v})
+		case bool:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberBOOL{Value: v})
+		case float64:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v)})
+		case map[string]interface{}:
+			dynamoList = append(dynamoList, &types.AttributeValueMemberM{Value: convertToDynamoDBMap(v)})
+		}
+	}
+	return dynamoList
 }
 
 // Function to update DynamoDB asynchronously
-func updateDynamoDB(details InstanceDetails) {
+func updateFargateServerDynamoDB() {
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion("us-east-1"), // Replace with your desired region
 	)
@@ -732,15 +787,49 @@ func updateDynamoDB(details InstanceDetails) {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	input := &dynamodb.PutItemInput{
-		TableName: aws.String(dynamoDBHostTableName),
+		TableName: aws.String(dynamoDBServerTableName),
 		Item: map[string]types.AttributeValue{
-			"instance_id":  &types.AttributeValueMemberS{Value: details.InstanceID},
-			"host_type":    &types.AttributeValueMemberS{Value: details.HostType},
-			"os":           &types.AttributeValueMemberS{Value: details.OS},
-			"private_ip":   &types.AttributeValueMemberS{Value: details.PrivateIP},
-			"public_ip":    &types.AttributeValueMemberS{Value: server_public_ip},
-			"region":       &types.AttributeValueMemberS{Value: details.Region},
-			"time_started": &types.AttributeValueMemberS{Value: timestamp},
+			"rtsp_server_id": &types.AttributeValueMemberS{Value: rtsp_server_id},
+			"host_type":      &types.AttributeValueMemberS{Value: server_environment},
+			"os":             &types.AttributeValueMemberS{Value: server_operating_system},
+			"private_ip":     &types.AttributeValueMemberS{Value: server_private_ip},
+			"public_ip":      &types.AttributeValueMemberS{Value: server_public_ip},
+			"region":         &types.AttributeValueMemberS{Value: server_region},
+			"time_started":   &types.AttributeValueMemberS{Value: timestamp},
+			"server_info":    &types.AttributeValueMemberM{Value: recordFargateMetadata},
+		},
+	}
+
+	go func() {
+		_, err := dbSvc.PutItem(context.TODO(), input) // Passing context as required
+		if err != nil {
+			log.Printf("failed to log stream start to DynamoDB: %v", err)
+		}
+	}()
+
+}
+func updateEC2ServerDynamoDB() {
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion("us-east-1"), // Replace with your desired region
+	)
+	if err != nil {
+		panic("unable to load SDK config, " + err.Error())
+	}
+
+	// Initialize DynamoDB client with the configuration
+	dbSvc = dynamodb.NewFromConfig(cfg)
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(dynamoDBServerTableName),
+		Item: map[string]types.AttributeValue{
+			"rtsp_server_id": &types.AttributeValueMemberS{Value: rtsp_server_id},
+			"host_type":      &types.AttributeValueMemberS{Value: server_environment},
+			"os":             &types.AttributeValueMemberS{Value: server_operating_system},
+			"private_ip":     &types.AttributeValueMemberS{Value: server_private_ip},
+			"public_ip":      &types.AttributeValueMemberS{Value: server_public_ip},
+			"region":         &types.AttributeValueMemberS{Value: server_region},
+			"time_started":   &types.AttributeValueMemberS{Value: timestamp},
 		},
 	}
 
@@ -761,7 +850,7 @@ func updateDynamoDBStopTime(server_instance_id string) {
 
 	// Prepare the update input
 	input := &dynamodb.UpdateItemInput{
-		TableName: aws.String(dynamoDBHostTableName),
+		TableName: aws.String(dynamoDBServerTableName),
 		Key: map[string]types.AttributeValue{
 			"instance_id": &types.AttributeValueMemberS{Value: server_instance_id},
 		},
