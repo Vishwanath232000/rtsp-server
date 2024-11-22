@@ -258,7 +258,6 @@ func (s *rtspSession) onAnnounce(c *rtspConn, ctx *gortsplib.ServerHandlerOnAnno
 	s.stateMutex.Lock()
 	s.state = gortsplib.ServerSessionStatePreRecord
 	s.stateMutex.Unlock()
-	s.log(logger.Debug, "onAnnounce: End-99")
 	countMutex.Lock()
 	activeSessionCount++
 	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
@@ -267,6 +266,8 @@ func (s *rtspSession) onAnnounce(c *rtspConn, ctx *gortsplib.ServerHandlerOnAnno
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	populateStreamDynamoDB(s.path.Name(), s.uuid.String(), s.author.NetConn().RemoteAddr().String(), timestamp)
 	updateServerDynamoDB(formattedSessionCount, timestamp)
+
+	s.log(logger.Debug, "onAnnounce: End-99")
 
 	return &base.Response{
 		StatusCode: base.StatusOK,
@@ -679,76 +680,3 @@ func updateStreamDynamoDBStopTime(stream_id string, timestamp string) {
 	}()
 
 }
-
-// func getFargateMetadataMap() map[string]types.AttributeValue {
-// 	metadataUri := os.Getenv("ECS_CONTAINER_METADATA_URI_V4")
-// 	if metadataUri == "" {
-// 		metadataUri = "http://169.254.170.2/v4"
-// 	}
-
-// 	taskEndpoint := metadataUri + "/task"
-// 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-// 	defer cancel()
-
-// 	req, err := http.NewRequestWithContext(ctx, "GET", taskEndpoint, nil)
-// 	if err != nil {
-// 		log.Printf("Error creating request for Fargate metadata: %v", err)
-// 		return nil
-// 	}
-
-// 	resp, err := http.DefaultClient.Do(req)
-// 	if err != nil {
-// 		log.Printf("Error retrieving Fargate metadata: %v", err)
-// 		return nil
-// 	}
-// 	defer resp.Body.Close()
-
-// 	// Parse the metadata JSON response into a generic map
-// 	var metadata map[string]interface{}
-// 	if err := json.NewDecoder(resp.Body).Decode(&metadata); err != nil {
-// 		log.Printf("Error decoding Fargate metadata JSON: %v", err)
-// 		return nil
-// 	}
-
-// 	// Convert JSON map to DynamoDB map structure
-// 	dynamoMap := convertToDynamoDBMap(metadata)
-// 	return dynamoMap
-// }
-
-// // Helper function to recursively convert JSON map to DynamoDB map
-// func convertToDynamoDBMap(data map[string]interface{}) map[string]types.AttributeValue {
-// 	dynamoMap := make(map[string]types.AttributeValue)
-// 	for key, value := range data {
-// 		switch v := value.(type) {
-// 		case string:
-// 			dynamoMap[key] = &types.AttributeValueMemberS{Value: v}
-// 		case bool:
-// 			dynamoMap[key] = &types.AttributeValueMemberBOOL{Value: v}
-// 		case float64: // AWS DynamoDB uses string or integer, float handling may vary
-// 			dynamoMap[key] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v)}
-// 		case map[string]interface{}:
-// 			dynamoMap[key] = &types.AttributeValueMemberM{Value: convertToDynamoDBMap(v)}
-// 		case []interface{}:
-// 			dynamoMap[key] = &types.AttributeValueMemberL{Value: convertToDynamoDBList(v)}
-// 		}
-// 	}
-// 	return dynamoMap
-// }
-
-// // Helper function to convert a list to DynamoDB list format
-// func convertToDynamoDBList(data []interface{}) []types.AttributeValue {
-// 	var dynamoList []types.AttributeValue
-// 	for _, item := range data {
-// 		switch v := item.(type) {
-// 		case string:
-// 			dynamoList = append(dynamoList, &types.AttributeValueMemberS{Value: v})
-// 		case bool:
-// 			dynamoList = append(dynamoList, &types.AttributeValueMemberBOOL{Value: v})
-// 		case float64:
-// 			dynamoList = append(dynamoList, &types.AttributeValueMemberN{Value: fmt.Sprintf("%v", v)})
-// 		case map[string]interface{}:
-// 			dynamoList = append(dynamoList, &types.AttributeValueMemberM{Value: convertToDynamoDBMap(v)})
-// 		}
-// 	}
-// 	return dynamoList
-// }
