@@ -40,6 +40,7 @@ var (
 	countMutex              sync.Mutex
 	dynamoDBStreamTableName string
 	sqsSvc                  *sqs.Client
+	queueURL                *string
 )
 
 func init() {
@@ -54,13 +55,25 @@ func init() {
 	// Initialize DynamoDB client with the configuration
 	dbSvc = dynamodb.NewFromConfig(cfg)
 
-	dynamoDBStreamTableName = os.Getenv("DYNAMODB_TABLE_NAME")
+	dynamoDBStreamTableName = os.Getenv("DYNAMODB_STREAM_TABLE_NAME")
 	if dynamoDBStreamTableName == "" {
 		log.Fatal("DYNAMODB_TABLE_NAME environment variable is not set")
-		dynamoDBStreamTableName = "sam-rtsp-virtual-streams"
+		dynamoDBStreamTableName = "rtsp-streams"
 
 	}
+	queueName := os.Getenv("SQS_NAME")
+	if queueName == "" {
+		queueName = "vish-stream-sqs"
+	}
 	sqsSvc = sqs.NewFromConfig(cfg)
+	getQueueURLInput := &sqs.GetQueueUrlInput{
+		QueueName: aws.String(queueName),
+	}
+	getQueueURLOutput, err := sqsSvc.GetQueueUrl(context.TODO(), getQueueURLInput)
+	if err != nil {
+		log.Fatalf("Failed to get queue URL: %v", err)
+	}
+	queueURL = getQueueURLOutput.QueueUrl
 
 }
 
@@ -197,7 +210,7 @@ func (s *rtspSession) onClose(err error) {
 		// Only log to DynamoDB and print stop message for publishers
 		updateStreamDynamoDBStopTime(s.path.Name(), timestamp)
 
-		updateServerDynamoDB(rtsp_server_id, formattedSessionCount, timestamp)
+		updateServerDynamoDB(formattedSessionCount, timestamp)
 
 	}
 	s.log(logger.Debug, "onClose: End-99")
@@ -246,6 +259,14 @@ func (s *rtspSession) onAnnounce(c *rtspConn, ctx *gortsplib.ServerHandlerOnAnno
 	s.state = gortsplib.ServerSessionStatePreRecord
 	s.stateMutex.Unlock()
 	s.log(logger.Debug, "onAnnounce: End-99")
+	countMutex.Lock()
+	activeSessionCount++
+	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
+	countMutex.Unlock()
+	s.log(logger.Info, "| %s | STARTED READING | %s", formattedSessionCount, s.path.Name())
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	populateStreamDynamoDB(s.path.Name(), s.uuid.String(), s.author.NetConn().RemoteAddr().String(), timestamp)
+	updateServerDynamoDB(formattedSessionCount, timestamp)
 
 	return &base.Response{
 		StatusCode: base.StatusOK,
@@ -327,6 +348,7 @@ func (s *rtspSession) onSetup(c *rtspConn, ctx *gortsplib.ServerHandlerOnSetupCt
 		s.stateMutex.Unlock()
 
 		s.log(logger.Debug, "onSetup: End-7")
+
 		return &base.Response{
 			StatusCode: base.StatusOK,
 		}, res.stream.rtspStream, nil
@@ -375,6 +397,7 @@ func (s *rtspSession) onPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Respo
 		s.stateMutex.Lock()
 		s.state = gortsplib.ServerSessionStatePlay
 		s.stateMutex.Unlock()
+
 	}
 	s.log(logger.Debug, "onPlay: End-99")
 
@@ -397,16 +420,16 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 			StatusCode: base.StatusBadRequest,
 		}, res.err
 	}
-	countMutex.Lock()
+	// countMutex.Lock()
 
-	activeSessionCount++
+	// activeSessionCount++
 	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount) // Pads to 6 digits with leading zeros
-	countMutex.Unlock()
+	// countMutex.Unlock()
 
-	s.log(logger.Info, "| %s | STARTED | %s", formattedSessionCount, s.path.Name())
+	s.log(logger.Info, "| %s | STARTED STREAMING | %s", formattedSessionCount, s.path.Name())
 
-	// Log publisher start
-	// fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
+	// // Log publisher start
+	// // fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
 
 	// Log to DynamoDB for publishers
 	messagePayload := map[string]string{
@@ -424,12 +447,8 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	// Create the SendMessageInput
 	sqsInput := &sqs.SendMessageInput{
 		MessageBody: aws.String(string(messageBody)),
-		QueueUrl:    aws.String("https://sqs.us-east-1.amazonaws.com/354918397507/vish-stream-sqs"), // Replace with your SQS queue URL
+		QueueUrl:    aws.String(*queueURL), // Replace with your SQS queue URL
 	}
-
-	// Send the message
-	// ctx1, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	// defer cancel()
 	sqsResp, err := sqsSvc.SendMessage(context.Background(), sqsInput)
 	if err != nil {
 		log.Printf("Failed to send message to SQS: %v", err)
@@ -441,10 +460,10 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	} else {
 		log.Println("MessageId is nil in SQS response")
 	}
-	timestamp := time.Now().UTC().Format(time.RFC3339)
+	// timestamp := time.Now().UTC().Format(time.RFC3339)
 
-	populateStreamDynamoDB(s.path.Name(), s.uuid.String(), s.author.NetConn().RemoteAddr().String(), timestamp)
-	updateServerDynamoDB(rtsp_server_id, formattedSessionCount, timestamp)
+	// populateStreamDynamoDB(s.path.Name(), s.uuid.String(), s.author.NetConn().RemoteAddr().String(), timestamp)
+	// updateServerDynamoDB(formattedSessionCount, timestamp)
 
 	s.stream = res.stream
 
@@ -603,7 +622,7 @@ func populateStreamDynamoDB(stream_id string, session_id string, streamer_ip_add
 
 }
 
-func updateServerDynamoDB(rtsp_server_id string, formatted_session_count string, time_updated string) {
+func updateServerDynamoDB(formatted_session_count string, time_updated string) {
 	input := &dynamodb.UpdateItemInput{
 		TableName: aws.String(dynamoDBServerTableName),
 		Key: map[string]types.AttributeValue{
@@ -624,7 +643,7 @@ func updateServerDynamoDB(rtsp_server_id string, formatted_session_count string,
 	go func() {
 		_, err := dbSvc.UpdateItem(context.TODO(), input) // Passing context as required
 		if err != nil {
-			log.Printf("failed to log stream stop to DynamoDB: %v", err)
+			log.Printf("failed to update the server table after connection starts: %v", err)
 		}
 	}()
 

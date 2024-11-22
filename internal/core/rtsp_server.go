@@ -545,10 +545,10 @@ var (
 
 // init is called automatically when the package is loaded
 func init() {
-	dynamoDBServerTableName = os.Getenv("DYNAMODB_HOST_INFO_TABLE_NAME")
+	dynamoDBServerTableName = os.Getenv("DYNAMODB_SERVER_TABLE_NAME")
 	if dynamoDBServerTableName == "" {
 		log.Fatal("DYNAMODB_TABLE_NAME environment variable is not set")
-		dynamoDBServerTableName = "sam-rtsp-server-hosts"
+		dynamoDBServerTableName = "rtsp-servers"
 	}
 
 	// Determine if running on Fargate or EC2
