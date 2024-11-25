@@ -413,9 +413,6 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 
 	s.log(logger.Info, "| %s | STARTED STREAMING | %s", formattedSessionCount, s.path.Name())
 
-	// // Log publisher start
-	// // fmt.Println("[",s.path.Name(),"]",":", s.uuid, ">>> Started")
-
 	// Log to DynamoDB for publishers
 	messagePayload := map[string]string{
 		"adapter_wifimac":   s.path.Name(),
