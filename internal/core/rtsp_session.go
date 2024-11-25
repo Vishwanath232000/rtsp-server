@@ -57,7 +57,7 @@ func init() {
 
 	dynamoDBStreamTableName = os.Getenv("DYNAMODB_STREAM_TABLE_NAME")
 	if dynamoDBStreamTableName == "" {
-		log.Fatal("DYNAMODB_TABLE_NAME environment variable is not set")
+		log.Printf("DYNAMODB_TABLE_NAME environment variable is not set")
 		dynamoDBStreamTableName = "rtsp-streams"
 
 	}
@@ -71,7 +71,7 @@ func init() {
 	}
 	getQueueURLOutput, err := sqsSvc.GetQueueUrl(context.TODO(), getQueueURLInput)
 	if err != nil {
-		log.Fatalf("Failed to get queue URL: %v", err)
+		log.Printf("Failed to get queue URL: %v", err)
 	}
 	queueURL = getQueueURLOutput.QueueUrl
 

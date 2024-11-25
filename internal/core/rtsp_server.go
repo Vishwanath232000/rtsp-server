@@ -531,7 +531,7 @@ var (
 	server_public_ip        string
 	server_private_ip       string
 	server_region           string
-	recordFargateMetadata   map[string]types.AttributeValue
+	completeMetadata        map[string]types.AttributeValue
 )
 
 // type InstanceDetails struct {
@@ -556,7 +556,7 @@ func init() {
 		// Check if Fargate metadata URI is set to decide the environment
 		if os.Getenv("ECS_CONTAINER_METADATA_URI_V4") != "" {
 			var err error
-			recordFargateMetadata, err = getFargateMetadata()
+			completeMetadata, err = getFargateMetadata()
 			if nil != err {
 				log.Printf("Failed to get Fargate metadata: %v", err)
 				return
@@ -568,65 +568,148 @@ func init() {
 
 		} else {
 			// Assume running on EC2
-			getInstanceMetadata()
+			var err error
+			completeMetadata, err = getInstanceMetadata()
+			if nil != err {
+				log.Printf("Failed to get Fargate metadata: %v", err)
+				return
+			}
 			// Log instance details and start the background update to DynamoDB
 			log.Println("Instance details : ", rtsp_server_id)
 			log.Println("Server : ", server_environment)
-			updateEC2ServerDynamoDB()
+			updateFargateServerDynamoDB()
 		}
 
 	}()
 }
 
-func getInstanceMetadataUsingUrl() (map[string]string, error) {
-	metadata := make(map[string]string)
+const (
+	InstanceIdentityDocumentURL = "http://169.254.169.254/latest/dynamic/instance-identity/document"
+	RequestTimeoutSeconds       = 2
+)
 
-	// Define all metadata URIs that you need to fetch
-	urls := []string{
-		"instance-id",
-		"placement/availability-zone",
-		"public-ipv4",
-		"local-ipv4",
-	}
+// Function to fetch EC2 metadata
+func getInstanceMetadata() (map[string]types.AttributeValue, error) {
+	// Use a context with a timeout for metadata request
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*RequestTimeoutSeconds)
+	defer cancel()
 
-	// Loop through each URL and fetch the metadata
-	for _, url := range urls {
-		fullURL := "http://169.254.169.254/latest/meta-data/" + url
-		resp, err := http.Get(fullURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch metadata from %s: %v", fullURL, err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
-		}
-
-		data, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read metadata response body: %v", err)
-		}
-
-		metadata[url] = string(data)
-	}
-
-	return metadata, nil
-}
-
-func getInstanceMetadata() {
-	metadata, err := getInstanceMetadataUsingUrl()
+	// Make the HTTP request to fetch instance identity document
+	req, err := http.NewRequestWithContext(ctx, "GET", InstanceIdentityDocumentURL, nil)
 	if err != nil {
-		fmt.Errorf("failed to get instance metadata: %v", err)
-		return
+		return nil, fmt.Errorf("Error creating request for EC2 metadata: %v\n", err)
+
 	}
 
-	// Populate the InstanceDetails struct with metadata
-	server_region = metadata["placement/availability-zone"]
-	rtsp_server_id = metadata["instance-id"]
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Error retrieving EC2 metadata: %v\n", err)
+
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Failed to fetch metadata: HTTP %v\n", resp.Status)
+
+	}
+
+	// Parse the JSON response into a map
+	var metadata map[string]interface{}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("Error reading EC2 metadata response: %v\n", err)
+
+	}
+
+	if err := json.Unmarshal(body, &metadata); err != nil {
+		return nil, fmt.Errorf("Error decoding EC2 metadata JSON: %v\n", err)
+
+	}
+
+	// Assign values to the global variables
+	if instanceID, ok := metadata["instanceId"].(string); ok {
+		rtsp_server_id = instanceID
+	} else {
+		fmt.Println("Error: instanceId not found in metadata")
+	}
+
+	if region, ok := metadata["region"].(string); ok {
+		server_region = region
+	} else {
+		fmt.Println("Error: region not found in metadata")
+	}
+
+	// Assign environment and operating system
 	server_environment = "EC2"
-	server_public_ip = getPublicIP()
-	server_private_ip = metadata["local-ipv4"]
+
+	// Assign complete metadata as DynamoDB-compatible map
+	ec2_metadata := convertToDynamoDBMap(metadata)
+
+	// Fetch private and public IP addresses separately
+	if publicIP, ok := metadata["publicIp"].(string); ok {
+		server_public_ip = publicIP
+	} else {
+		fmt.Println("Error: publicIp not found in metadata")
+	}
+
+	if privateIP, ok := metadata["privateIp"].(string); ok {
+		server_private_ip = privateIP
+	} else {
+		fmt.Println("Error: privateIp not found in metadata")
+	}
+
+	return ec2_metadata, nil
 }
+
+// func getInstanceMetadataUsingUrl() (map[string]string, error) {
+// 	metadata := make(map[string]string)
+
+// 	// Define all metadata URIs that you need to fetch
+// 	urls := []string{
+// 		"instance-id",
+// 		"placement/availability-zone",
+// 		"public-ipv4",
+// 		"local-ipv4",
+// 	}
+
+// 	// Loop through each URL and fetch the metadata
+// 	for _, url := range urls {
+// 		fullURL := "http://169.254.169.254/latest/meta-data/" + url
+// 		resp, err := http.Get(fullURL)
+// 		if err != nil {
+// 			return nil, fmt.Errorf("failed to fetch metadata from %s: %v", fullURL, err)
+// 		}
+// 		defer resp.Body.Close()
+
+// 		if resp.StatusCode != http.StatusOK {
+// 			return nil, fmt.Errorf("failed to fetch metadata: %v", resp.Status)
+// 		}
+
+// 		data, err := io.ReadAll(resp.Body)
+// 		if err != nil {
+// 			return nil, fmt.Errorf("failed to read metadata response body: %v", err)
+// 		}
+
+// 		metadata[url] = string(data)
+// 	}
+
+// 	return metadata, nil
+// }
+
+// func getInstanceMetadata() {
+// 	metadata, err := getInstanceMetadataUsingUrl()
+// 	if err != nil {
+// 		log.Printf("failed to get instance metadata: %v", err)
+// 		return
+// 	}
+
+// 	// Populate the InstanceDetails struct with metadata
+// 	server_region = metadata["placement/availability-zone"]
+// 	rtsp_server_id = metadata["instance-id"]
+// 	server_environment = "EC2"
+// 	server_public_ip = getPublicIP()
+// 	server_private_ip = metadata["local-ipv4"]
+// }
 
 func getFargateMetadata() (map[string]types.AttributeValue, error) {
 
@@ -796,7 +879,7 @@ func updateFargateServerDynamoDB() {
 			"public_ip":      &types.AttributeValueMemberS{Value: server_public_ip},
 			"region":         &types.AttributeValueMemberS{Value: server_region},
 			"time_started":   &types.AttributeValueMemberS{Value: timestamp},
-			"server_info":    &types.AttributeValueMemberM{Value: recordFargateMetadata},
+			"server_info":    &types.AttributeValueMemberM{Value: completeMetadata},
 		},
 	}
 
