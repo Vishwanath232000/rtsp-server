@@ -77,22 +77,6 @@ func init() {
 
 }
 
-// func getInstanceID() string {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-// 	defer cancel()
-
-// 	client := imds.New(imds.Options{})
-
-// 	// Get instance ID from IMDS
-// 	instanceID, err := client.GetInstanceIdentityDocument(ctx, &imds.GetInstanceIdentityDocumentInput{})
-
-// 	if err != nil {
-// 		return "local-instance" // fallback for local testing
-// 	}
-
-// 	return instanceID.InstanceID
-// }
-
 const (
 	pauseAfterAuthError = 2 * time.Second
 )

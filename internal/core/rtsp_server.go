@@ -538,7 +538,7 @@ var (
 func init() {
 	dynamoDBServerTableName = os.Getenv("DYNAMODB_SERVER_TABLE_NAME")
 	if dynamoDBServerTableName == "" {
-		log.Fatal("DYNAMODB_TABLE_NAME environment variable is not set")
+		log.Printf("DYNAMODB_TABLE_NAME environment variable is not set")
 		dynamoDBServerTableName = "rtsp-servers"
 	}
 
