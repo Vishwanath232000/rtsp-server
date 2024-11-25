@@ -623,7 +623,7 @@ func populateStreamDynamoDB(stream_id string, session_id string, streamer_ip_add
 
 }
 
-func updateServerDynamoDB(formatted_session_count string, time_updated string) {
+func updateServerDynamoDB(formattedSessionCount string, time_updated string) {
 	input := &dynamodb.UpdateItemInput{
 		TableName: aws.String(dynamoDBServerTableName),
 		Key: map[string]types.AttributeValue{
@@ -637,7 +637,7 @@ func updateServerDynamoDB(formatted_session_count string, time_updated string) {
 				Value: time_updated,
 			},
 			":session_count": &types.AttributeValueMemberS{
-				Value: formatted_session_count,
+				Value: formattedSessionCount,
 			},
 		},
 	}

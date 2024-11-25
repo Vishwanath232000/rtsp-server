@@ -863,6 +863,7 @@ func populateServerDynamoDB() {
 	// Initialize DynamoDB client with the configuration
 	dbSvc = dynamodb.NewFromConfig(cfg)
 	timestamp := time.Now().UTC().Format(time.RFC3339)
+	formattedSessionCount := fmt.Sprintf("%06d", activeSessionCount)
 
 	input := &dynamodb.PutItemInput{
 		TableName: aws.String(dynamoDBServerTableName),
@@ -875,6 +876,7 @@ func populateServerDynamoDB() {
 			"region":         &types.AttributeValueMemberS{Value: server_region},
 			"time_started":   &types.AttributeValueMemberS{Value: timestamp},
 			"server_info":    &types.AttributeValueMemberM{Value: completeMetadata},
+			"session_count":  &types.AttributeValueMemberS{Value: formattedSessionCount},
 		},
 	}
 
