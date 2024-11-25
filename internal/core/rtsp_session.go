@@ -461,11 +461,6 @@ func (s *rtspSession) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	} else {
 		log.Println("MessageId is nil in SQS response")
 	}
-	// timestamp := time.Now().UTC().Format(time.RFC3339)
-
-	// populateStreamDynamoDB(s.path.Name(), s.uuid.String(), s.author.NetConn().RemoteAddr().String(), timestamp)
-	// updateServerDynamoDB(formattedSessionCount, timestamp)
-
 	s.stream = res.stream
 
 	s.stateMutex.Lock()
