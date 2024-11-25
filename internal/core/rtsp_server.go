@@ -564,7 +564,6 @@ func init() {
 			// Log instance details and start the background update to DynamoDB
 			log.Println("Instance details : ", rtsp_server_id)
 			log.Println("Server : ", server_environment)
-			updateFargateServerDynamoDB()
 
 		} else {
 			// Assume running on EC2
@@ -577,8 +576,9 @@ func init() {
 			// Log instance details and start the background update to DynamoDB
 			log.Println("Instance details : ", rtsp_server_id)
 			log.Println("Server : ", server_environment)
-			updateFargateServerDynamoDB()
+
 		}
+		populateServerDynamoDB()
 
 	}()
 }
@@ -597,19 +597,19 @@ func getInstanceMetadata() (map[string]types.AttributeValue, error) {
 	// Make the HTTP request to fetch instance identity document
 	req, err := http.NewRequestWithContext(ctx, "GET", InstanceIdentityDocumentURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("Error creating request for EC2 metadata: %v\n", err)
+		return nil, fmt.Errorf("Error creating request for EC2 metadata: %v", err)
 
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Error retrieving EC2 metadata: %v\n", err)
+		return nil, fmt.Errorf("Error retrieving EC2 metadata: %v", err)
 
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Failed to fetch metadata: HTTP %v\n", resp.Status)
+		return nil, fmt.Errorf("Failed to fetch metadata: HTTP %v", resp.Status)
 
 	}
 
@@ -617,12 +617,12 @@ func getInstanceMetadata() (map[string]types.AttributeValue, error) {
 	var metadata map[string]interface{}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("Error reading EC2 metadata response: %v\n", err)
+		return nil, fmt.Errorf("Error reading EC2 metadata response: %v", err)
 
 	}
 
 	if err := json.Unmarshal(body, &metadata); err != nil {
-		return nil, fmt.Errorf("Error decoding EC2 metadata JSON: %v\n", err)
+		return nil, fmt.Errorf("Error decoding EC2 metadata JSON: %v", err)
 
 	}
 
@@ -642,21 +642,16 @@ func getInstanceMetadata() (map[string]types.AttributeValue, error) {
 	// Assign environment and operating system
 	server_environment = "EC2"
 
-	// Assign complete metadata as DynamoDB-compatible map
-	ec2_metadata := convertToDynamoDBMap(metadata)
-
 	// Fetch private and public IP addresses separately
-	if publicIP, ok := metadata["publicIp"].(string); ok {
-		server_public_ip = publicIP
-	} else {
-		fmt.Println("Error: publicIp not found in metadata")
-	}
+	server_public_ip = getPublicIP()
 
 	if privateIP, ok := metadata["privateIp"].(string); ok {
 		server_private_ip = privateIP
 	} else {
 		fmt.Println("Error: privateIp not found in metadata")
 	}
+	// Assign complete metadata
+	ec2_metadata := convertToDynamoDBMap(metadata)
 
 	return ec2_metadata, nil
 }
@@ -857,7 +852,7 @@ func convertToDynamoDBList(data []interface{}) []types.AttributeValue {
 }
 
 // Function to update DynamoDB asynchronously
-func updateFargateServerDynamoDB() {
+func populateServerDynamoDB() {
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion("us-east-1"), // Replace with your desired region
 	)
@@ -891,39 +886,40 @@ func updateFargateServerDynamoDB() {
 	}()
 
 }
-func updateEC2ServerDynamoDB() {
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion("us-east-1"), // Replace with your desired region
-	)
-	if err != nil {
-		panic("unable to load SDK config, " + err.Error())
-	}
 
-	// Initialize DynamoDB client with the configuration
-	dbSvc = dynamodb.NewFromConfig(cfg)
-	timestamp := time.Now().UTC().Format(time.RFC3339)
+// func updateEC2ServerDynamoDB() {
+// 	cfg, err := config.LoadDefaultConfig(context.TODO(),
+// 		config.WithRegion("us-east-1"), // Replace with your desired region
+// 	)
+// 	if err != nil {
+// 		panic("unable to load SDK config, " + err.Error())
+// 	}
 
-	input := &dynamodb.PutItemInput{
-		TableName: aws.String(dynamoDBServerTableName),
-		Item: map[string]types.AttributeValue{
-			"rtsp_server_id": &types.AttributeValueMemberS{Value: rtsp_server_id},
-			"host_type":      &types.AttributeValueMemberS{Value: server_environment},
-			"os":             &types.AttributeValueMemberS{Value: server_operating_system},
-			"private_ip":     &types.AttributeValueMemberS{Value: server_private_ip},
-			"public_ip":      &types.AttributeValueMemberS{Value: server_public_ip},
-			"region":         &types.AttributeValueMemberS{Value: server_region},
-			"time_started":   &types.AttributeValueMemberS{Value: timestamp},
-		},
-	}
+// 	// Initialize DynamoDB client with the configuration
+// 	dbSvc = dynamodb.NewFromConfig(cfg)
+// 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
-	go func() {
-		_, err := dbSvc.PutItem(context.TODO(), input) // Passing context as required
-		if err != nil {
-			log.Printf("failed to log stream start to DynamoDB: %v", err)
-		}
-	}()
+// 	input := &dynamodb.PutItemInput{
+// 		TableName: aws.String(dynamoDBServerTableName),
+// 		Item: map[string]types.AttributeValue{
+// 			"rtsp_server_id": &types.AttributeValueMemberS{Value: rtsp_server_id},
+// 			"host_type":      &types.AttributeValueMemberS{Value: server_environment},
+// 			"os":             &types.AttributeValueMemberS{Value: server_operating_system},
+// 			"private_ip":     &types.AttributeValueMemberS{Value: server_private_ip},
+// 			"public_ip":      &types.AttributeValueMemberS{Value: server_public_ip},
+// 			"region":         &types.AttributeValueMemberS{Value: server_region},
+// 			"time_started":   &types.AttributeValueMemberS{Value: timestamp},
+// 		},
+// 	}
 
-}
+// 	go func() {
+// 		_, err := dbSvc.PutItem(context.TODO(), input) // Passing context as required
+// 		if err != nil {
+// 			log.Printf("failed to log stream start to DynamoDB: %v", err)
+// 		}
+// 	}()
+
+// }
 
 // Function to update the time_stopped attribute in DynamoDB when the server stops
 func updateDynamoDBStopTime(rtsp_server_id string) {
